@@ -2,8 +2,15 @@
 ---
 
 
-
-
+Installation
+1. Install library dependencies:
+```
+    conda install cython boost
+```
+2. modify `setup.py`
+```
+    CONDA_ENV_INCLUDE=YOUR_PATH
+```
 
 
 Reference:

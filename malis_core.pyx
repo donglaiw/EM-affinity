@@ -2,14 +2,32 @@ import numpy as np
 cimport numpy as np
 from scipy.misc import comb
 import scipy.sparse
-from libc.stdint cimport uint64_t
+from libc.stdint cimport uint64_t,int32_t
 
 cdef extern from "malis_core_cpp.h":
-    void malis_loss_weights_cpp(const int nVert, const uint64_t* segTrue,
-               const uint64_t* conn_dims, const uint64_t* nhood_data, const uint64_t* nhood_dims,
+
+    void preCompute(const uint64_t* conn_dims, const int32_t* nhood_data, const uint64_t* nhood_dims,
+        uint64_t* pre_ve, uint64_t* pre_prodDims, int32_t* pre_nHood);
+
+    void malis_loss_weights_cpp_pair(const uint64_t* segTrue,
+               const uint64_t* conn_dims, const int32_t* nhood_data, const uint64_t* nhood_dims,
+               const float* edgeWeight, float* nPairPerEdge,
+               uint64_t* pre_ve, uint64_t* pre_prodDims, int32_t* pre_nHood);
+    void malis_loss_weights_cpp_pos(const uint64_t* segTrue,
+               const uint64_t* conn_dims, const int32_t* nhood_data, const uint64_t* nhood_dims,
+               const float* edgeWeight, float* nPairPerEdge,
+               uint64_t* pre_ve, uint64_t* pre_prodDims, int32_t* pre_nHood, const int pos);
+    void malis_loss_weights_cpp_neg(const uint64_t* segTrue,
+               const uint64_t* conn_dims, const int32_t* nhood_data, const uint64_t* nhood_dims,
+               const float* edgeWeight, float* nPairPerEdge,
+               uint64_t* pre_ve, uint64_t* pre_prodDims, int32_t* pre_nHood);
+
+    void malis_loss_weights_cpp(const uint64_t* segTrue,
+               const uint64_t* conn_dims, const int32_t* nhood_data, const uint64_t* nhood_dims,
                    const float* edgeWeight,
                    const int pos,
-                   uint64_t* nPairPerEdge);
+                   float* nPairPerEdge);
+
     void connected_components_cpp(const int nVert,
                    const int nEdge, const uint64_t* node1, const uint64_t* node2, const int* edgeWeight,
                    uint64_t* seg);
@@ -17,17 +35,60 @@ cdef extern from "malis_core_cpp.h":
                    const int nEdge, const uint64_t* node1, const uint64_t* node2, const float* edgeWeight,
                    uint64_t* seg);
 
+
+def malis_init(np.ndarray[uint64_t, ndim=1] conn_dims,
+                np.ndarray[int32_t, ndim=1] nhood_data,
+               np.ndarray[uint64_t, ndim=1] nhood_dims):
+    cdef np.ndarray[uint64_t, ndim=1] pre_ve = np.zeros(2,dtype=np.uint64)
+    cdef np.ndarray[uint64_t, ndim=1] pre_prodDims = np.zeros(3,dtype=np.uint64)
+    cdef np.ndarray[int32_t, ndim=1] pre_nHood = np.zeros(3,dtype=np.int32)
+    preCompute(&conn_dims[0], &nhood_data[0], &nhood_dims[0], &pre_ve[0], &pre_prodDims[0], &pre_nHood[0])
+    return pre_ve, pre_prodDims, pre_nHood
+
+def malis_loss_weights_pair(np.ndarray[uint64_t, ndim=1] segTrue,
+                np.ndarray[uint64_t, ndim=1] conn_dims,
+                np.ndarray[int32_t, ndim=1] nhood_data,
+                np.ndarray[uint64_t, ndim=1] nhood_dims,
+                np.ndarray[uint64_t, ndim=1] pre_ve,
+                np.ndarray[uint64_t, ndim=1] pre_prodDims,
+                np.ndarray[int32_t, ndim=1] pre_nHood,
+                np.ndarray[float, ndim=1] edgeWeight):
+    segTrue = np.ascontiguousarray(segTrue)
+    edgeWeight = np.ascontiguousarray(edgeWeight)
+    cdef np.ndarray[float, ndim=1] nPairPerEdge = np.zeros(edgeWeight.shape[0],dtype=np.float32)
+    malis_loss_weights_cpp_pair(&segTrue[0],
+                   &conn_dims[0], &nhood_data[0], &nhood_dims[0], &edgeWeight[0], &nPairPerEdge[0],
+                   &pre_ve[0], &pre_prodDims[0], &pre_nHood[0]);
+    return nPairPerEdge
+
+def malis_loss_weights_pos(np.ndarray[uint64_t, ndim=1] segTrue,
+                np.ndarray[uint64_t, ndim=1] conn_dims,
+                np.ndarray[int32_t, ndim=1] nhood_data,
+                np.ndarray[uint64_t, ndim=1] nhood_dims,
+                np.ndarray[uint64_t, ndim=1] pre_ve,
+                np.ndarray[uint64_t, ndim=1] pre_prodDims,
+                np.ndarray[int32_t, ndim=1] pre_nHood,
+                np.ndarray[float, ndim=1] edgeWeight,
+                int pos):
+    segTrue = np.ascontiguousarray(segTrue)
+    edgeWeight = np.ascontiguousarray(edgeWeight)
+    cdef np.ndarray[float, ndim=1] nPairPerEdge = np.zeros(edgeWeight.shape[0],dtype=np.float32)
+    malis_loss_weights_cpp_pos(&segTrue[0],
+                   &conn_dims[0], &nhood_data[0], &nhood_dims[0], &edgeWeight[0], &nPairPerEdge[0],
+                   &pre_ve[0], &pre_prodDims[0], &pre_nHood[0], pos);
+    return nPairPerEdge
+
+
 def malis_loss_weights(np.ndarray[uint64_t, ndim=1] segTrue,
                 np.ndarray[uint64_t, ndim=1] conn_dims,
-                np.ndarray[uint64_t, ndim=1] nhood_data,
+                np.ndarray[int32_t, ndim=1] nhood_data,
                 np.ndarray[uint64_t, ndim=1] nhood_dims,
                 np.ndarray[float, ndim=1] edgeWeight,
                 int pos):
-    cdef int nVert = segTrue.shape[0]
     segTrue = np.ascontiguousarray(segTrue)
     edgeWeight = np.ascontiguousarray(edgeWeight)
-    cdef np.ndarray[uint64_t, ndim=1] nPairPerEdge = np.zeros(edgeWeight.shape[0],dtype=np.uint64)
-    malis_loss_weights_cpp(nVert, &segTrue[0],
+    cdef np.ndarray[float, ndim=1] nPairPerEdge = np.zeros(edgeWeight.shape[0],dtype=np.float32)
+    malis_loss_weights_cpp(&segTrue[0],
                    &conn_dims[0], &nhood_data[0], &nhood_dims[0], &edgeWeight[0],
                    pos,
                    &nPairPerEdge[0]);
