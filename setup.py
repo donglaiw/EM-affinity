@@ -6,7 +6,7 @@ def setup_cython():
 
         CONDA_ENV_INCLUDE="/n/home04/donglai/.conda/envs/pytorch/include"
 
-	ext_modules = [Extension("malis_core", ["malis_core.pyx", "malis_core_cpp.cpp"], language='c++',extra_link_args=["-std=c++11"],
+	ext_modules = [Extension("malis_core", ["malis/malis_core.pyx", "malis/malis_core_cpp.cpp"], language='c++',extra_link_args=["-std=c++11"],
              extra_compile_args=["-std=c++11", "-w"])]
 
 	setup(cmdclass = {'build_ext': build_ext}, include_dirs=[numpy.get_include(), CONDA_ENV_INCLUDE], ext_modules = ext_modules)
