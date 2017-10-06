@@ -18,10 +18,13 @@
     - T_model.py: unet3D (with and without BatchNorm)
     - T_pruner.py: channel pruning (in progress)
 2. Example
-    - E_test.py: test model and benchmark speed
-    - E_train.py: train model
+    - E_benchmark.py: benchmark speed
+    - E_test.py: test on a volume
+    - E_train.py: train on a volume
     - E_prune.py: channel prune model
 
 ## Reference:
-1. [cython implementation](https://github.com/TuragaLab/malis)
-2. [naibaf7's caffe implementation](https://github.com/naibaf7/caffe/blob/master/src/caffe/layers/malis_loss_layer.cpp)
+1. [malis: cython implementation](https://github.com/TuragaLab/malis)
+2. [malis: caffe layer implementation](https://github.com/naibaf7/caffe/blob/master/src/caffe/layers/malis_loss_layer.cpp)
+3. [unet: pytorch
+   implementation](https://github.com/meetshah1995/pytorch-semseg/blob/master/ptsemseg/models/unet.py)

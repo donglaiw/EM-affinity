@@ -44,41 +44,36 @@ class VolumeDataset(torch.utils.data.Dataset):
         self.color_shift = color_shift # add bias
         # pre allocation [bad for multi-thread]
 
+    def index2zyx(self, index):
+        raise NotImplementedError("Need to implement index2zyx ! "):
+
+    def __len__(self): # number of possible position
+        raise NotImplementedError("Need to implement __len__ ! "):
+
     def __getitem__(self, index):
         # todo: add random zoom
-        p0 = int(np.floor(index/self.crop_size_prod[0]))
-        p0_r = index % self.crop_size_prod[0]
-        p1 = int(np.floor(p0_r/self.crop_size_prod[1]))
-        p2 = int(p0_r % self.crop_size_prod[1])
-        out_data = self.data[:,p0:p0+self.out_data_size[0],p1:p1+self.out_data_size[1],p2:p2+self.out_data_size[2]].copy()
-        # label data: pad one on the left, for possible reflection
-        out_label = self.label[:,1+p0:1+p0+self.out_label_size[0],1+p1:1+p1+self.out_label_size[1],1+p2:1+p2+self.out_label_size[2]].copy()
+        pos = index2zyx(self, index)
+        out_data = self.data[:,pos[0]:pos[0]+self.out_data_size[0],
+                             pos[1]:pos[1]+self.out_data_size[1],
+                             pos[2]:pos[2]+self.out_data_size[2]].copy()
+        out_label = False
+        out_seg = False;
         # post
+        do_reflect=None
+        do_swapxy=False
         if self.reflect is not None:
             # random rotation/relection
-            do_flip = [self.reflect[x]>0 and np.random.random()>0.5 for x in range(3)]
-            if any(do_flip):
-                st = np.ones((3,3),dtype=int)
-                tmp_label = self.label[:,p0:2+p0+self.out_label_size[0],p1:2+p1+self.out_label_size[1],p2:2+p2+self.out_label_size[2]]
-                if do_flip[0]:
+            do_reflect = [self.reflect[x]>0 and np.random.random()>0.5 for x in range(3)]
+            if any(do_reflect):
+                if do_reflect[0]:
                     out_data  = out_data[:,::-1,:,:]
-                    tmp_label = tmp_label[:,::-1,:,:]
-                    st[0,0] -= 1
-                if do_flip[1]:
+                if do_reflect[1]:
                     out_data  = out_data[:,:,::-1,:]
-                    tmp_label = tmp_label[:,:,::-1,:]
-                    st[1,1] -= 1
-                if do_flip[2]:
+                if do_reflect[2]:
                     out_data  = out_data[:,:,:,::-1]
-                    tmp_label = tmp_label[:,:,:,::-1]
-                    st[2,2] -= 1
-                for i in range(3):
-                    out_label[i] = tmp_label[i,st[i,0]:st[i,0]+self.out_label_size[0],st[i,1]:st[i,1]+self.out_label_size[1],st[i,2]:st[i,2]+self.out_label_size[2]]
-
         if self.swapxy and np.random.random()>0.5:
+            do_swapxy = True
             out_data = out_data.transpose((0,1,3,2))
-            out_label = out_label.transpose((0,1,3,2))
-            out_label[[1,2]] = out_label[[2,1]]
         # color scale/shift
         if self.color_scale is not None:
             out_data_mean = out_data.mean()
@@ -89,12 +84,56 @@ class VolumeDataset(torch.utils.data.Dataset):
         if self.clip is not None:
             out_data = np.clip(out_data,self.clip[0],self.clip[1])
 
-        if self.nhood is not None: # for malis loss, need local segmentation
-            return out_data, out_label.astype(np.float32), malis_core.connected_components_affgraph(out_label.astype(np.int32), self.nhood)[0].astype(np.uint64)
-        else:
-            return out_data, out_label.astype(np.float32)
+        # do label
+        if self.label is not None:
+            # pad one on the left, for possible reflection
+            out_label = self.label[:,1+pos[0]:1+pos[0]+self.out_label_size[0],
+                                   1+pos[1]:1+pos[1]+self.out_label_size[1],
+                                   1+pos[2]:1+pos[2]+self.out_label_size[2]].copy().astype(np.float32)
+            if do_reflect is not None:
+                st = np.ones((3,3),dtype=int)
+                tmp_label = self.label[:,pz:2+pz+self.out_label_size[0],py:2+py+self.out_label_size[1],px:2+px+self.out_label_size[2]]
+                if do_reflect[0]:
+                    out_data  = out_data[:,::-1,:,:]
+                    tmp_label = tmp_label[:,::-1,:,:]
+                    st[0,0] -= 1
+                if do_reflect[1]:
+                    out_data  = out_data[:,:,::-1,:]
+                    tmp_label = tmp_label[:,:,::-1,:]
+                    st[1,1] -= 1
+                if do_reflect[2]:
+                    out_data  = out_data[:,:,:,::-1]
+                    tmp_label = tmp_label[:,:,:,::-1]
+                    st[2,2] -= 1
+                for i in range(3):
+                    out_label[i] = tmp_label[i,st[i,0]:st[i,0]+self.out_label_size[0],st[i,1]:st[i,1]+self.out_label_size[1],st[i,2]:st[i,2]+self.out_label_size[2]]
+            if do_swapxy:
+                out_label = out_label.transpose((0,1,3,2))
+                out_label[[1,2]] = out_label[[2,1]]
+            # do local segmentation from affinity
+            if self.nhood is not None: # for malis loss, need local segmentation
+                out_seg = malis_core.connected_components_affgraph(out_label.astype(np.int32), self.nhood)[0].astype(np.uint64)
+        return out_data, out_label, out_seg, pos
 
-    def __len__(self): # number of possible position
+
+
+class VolumeDatasetTrain(VolumeDataset):
+    def index2zyx(self, index):
+        pz = int(np.floor(index/self.crop_size_prod[0]))
+        pz_r = index % self.crop_size_prod[0]
+        py = int(np.floor(pz_r/self.crop_size_prod[1]))
+        px = int(pz_r % self.crop_size_prod[1])
+        return [pz,py,px]
+    def __len__(self): # all possible position
         return np.prod(self.crop_size)
 
+class VolumeDatasetTest(VolumeDataset):
+    def index2zyx(self, index):
+        pz = int(np.floor(index/self.crop_size_prod[0]))
+        pz_r = index % self.crop_size_prod[0]
+        py = int(np.floor(pz_r/self.crop_size_prod[1]))
+        px = int(pz_r % self.crop_size_prod[1])
+        return [pz,py,px]
 
+    def __len__(self): # non-overlapping position
+        return np.prod(self.crop_size)

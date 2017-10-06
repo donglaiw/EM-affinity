@@ -12,7 +12,7 @@ import torch.utils.data
 
 import malis_core
 from T_model import unet3D
-from T_data import VolumeDataset, np_collate
+from T_data import VolumeDatasetTrain, np_collate
 
 # for L2 training: re-weight the error by label bias (far more 1 than 0)
 def error_scale(data, clip_low, clip_high):
@@ -76,7 +76,7 @@ if __name__ == "__main__":
         print '\t creating dataloader'
         # add sampler
         nhood = None if opt[0]=='0' else train_nhood
-        train_dataset = VolumeDataset(train_data, train_label, nhood, batch_size, data_size=train_data.shape[1:], reflect=(1,1,1),swapxy=True,color_scale=(0.8,1.2),color_shift=(-0.2,0.2),clip=(0.05,0.95),out_data_size=train_size[0],out_label_size=train_size[1])
+        train_dataset = VolumeDatasetTrain(train_data, train_label, nhood, batch_size, data_size=train_data.shape[1:], reflect=(1,1,1),swapxy=True,color_scale=(0.8,1.2),color_shift=(-0.2,0.2),clip=(0.05,0.95),out_data_size=train_size[0],out_label_size=train_size[1])
         if '_df' in data_name: # mean already normalized
             train_dataset.color_scale = (0.9,1.1)
             train_dataset.color_shift = (-0.1,0.1)
