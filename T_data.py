@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.utils.data
+import malis_core
 
 # for dataloader
 def np_collate(batch):
@@ -12,7 +13,7 @@ def np_collate(batch):
     
 class VolumeDataset(torch.utils.data.Dataset):
     def __init__(self,
-                 data, label, nhood = None, batch_size = 1,
+                 data, label=None, nhood = None,
                  data_size = (0,0,0),
                  label_size = (0,0,0),
                  zoom_range = None, #((0.8,1.2),(0.8,1.2),(0.8,1.2))
@@ -21,6 +22,7 @@ class VolumeDataset(torch.utils.data.Dataset):
                  swapxy = False,
                  out_data_size = (31,204,204),
                  out_label_size = (3,116,116),
+                 sample_stride = (1,1,1), # grid sample
                  color_scale = None, #(0.8,1.2)
                  color_shift = None, #(-0.2,0.2)
                  clip = None): # (0.05,0.95)
@@ -28,13 +30,10 @@ class VolumeDataset(torch.utils.data.Dataset):
         self.data = data
         self.label = label
         self.nhood = nhood
-        self.batch_size = batch_size
         # samples, channels, depths, rows, cols
         self.data_size = np.array(data_size) # volume size
         self.out_data_size = np.array(out_data_size) # volume size
         self.out_label_size = np.array(out_label_size) # volume size
-        self.crop_size = data_size-out_data_size+1 # same for data and label
-        self.crop_size_prod = np.array([self.crop_size[1]*self.crop_size[2],self.crop_size[2]],dtype=np.float32)
         self.shift_range = shift_range # shift noise
         self.zoom_range = zoom_range # zoom range
         self.reflect = reflect # reflection
@@ -43,16 +42,20 @@ class VolumeDataset(torch.utils.data.Dataset):
         self.color_scale = color_scale # amplify x-mean(x)
         self.color_shift = color_shift # add bias
         # pre allocation [bad for multi-thread]
-
-    def index2zyx(self, index):
-        raise NotImplementedError("Need to implement index2zyx ! "):
+        # compute sample size
+        self.sample_stride = sample_stride
+        self.sample_size = 1+np.ceil((self.data_size-self.out_data_size+1)/np.array(sample_stride,dtype=np.float32)).astype(int)
+        self.sample_size_prod = np.array([np.prod(self.sample_size),np.prod(self.sample_size[1:3]),self.sample_size[2]])
 
     def __len__(self): # number of possible position
-        raise NotImplementedError("Need to implement __len__ ! "):
+        return self.sample_size_prod[0]
+
+    def index2zyx(self, index):
+        raise NotImplementedError("Need to implement index2zyx !")
 
     def __getitem__(self, index):
         # todo: add random zoom
-        pos = index2zyx(self, index)
+        pos = self.index2zyx(index)
         out_data = self.data[:,pos[0]:pos[0]+self.out_data_size[0],
                              pos[1]:pos[1]+self.out_data_size[1],
                              pos[2]:pos[2]+self.out_data_size[2]].copy()
@@ -87,6 +90,7 @@ class VolumeDataset(torch.utils.data.Dataset):
         # do label
         if self.label is not None:
             # pad one on the left, for possible reflection
+            # assume label is the same size as data
             out_label = self.label[:,1+pos[0]:1+pos[0]+self.out_label_size[0],
                                    1+pos[1]:1+pos[1]+self.out_label_size[1],
                                    1+pos[2]:1+pos[2]+self.out_label_size[2]].copy().astype(np.float32)
@@ -119,21 +123,25 @@ class VolumeDataset(torch.utils.data.Dataset):
 
 class VolumeDatasetTrain(VolumeDataset):
     def index2zyx(self, index):
-        pz = int(np.floor(index/self.crop_size_prod[0]))
-        pz_r = index % self.crop_size_prod[0]
-        py = int(np.floor(pz_r/self.crop_size_prod[1]))
-        px = int(pz_r % self.crop_size_prod[1])
-        return [pz,py,px]
-    def __len__(self): # all possible position
-        return np.prod(self.crop_size)
+        # int division = int(floor(.))
+        pos = [0,0,0]
+        pos[0] = index/self.sample_size_prod[1]
+        pz_r = index % self.sample_size_prod[1]
+        pos[1] = pz_r/self.sample_size_prod[2]
+        pos[0] = pz_r % self.sample_size_prod[2]
+        return pos
 
 class VolumeDatasetTest(VolumeDataset):
     def index2zyx(self, index):
-        pz = int(np.floor(index/self.crop_size_prod[0]))
-        pz_r = index % self.crop_size_prod[0]
-        py = int(np.floor(pz_r/self.crop_size_prod[1]))
-        px = int(pz_r % self.crop_size_prod[1])
-        return [pz,py,px]
-
-    def __len__(self): # non-overlapping position
-        return np.prod(self.crop_size)
+        pos = [0,0,0]
+        pos[0] = index/self.sample_size_prod[1]
+        pz_r = index % self.sample_size_prod[1]
+        pos[1] = pz_r/self.sample_size_prod[2]
+        pos[2] = pz_r % self.sample_size_prod[2]
+        # take care of the boundary case
+        for i in range(3):
+            if pos[i] != self.sample_size[i]-1:
+                pos[i] = pos[i] * self.sample_stride[i]
+            else:
+                pos[i] = self.data_size[i]-self.out_data_size[i]
+        return pos
