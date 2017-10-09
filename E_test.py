@@ -10,32 +10,33 @@ from T_model import unet3D
 from T_data import VolumeDatasetTest, np_collate
 import argparse
 
-# CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7,8 python E_test.py 1 /n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/ /n/coxfs01/donglai/malis_trans/pytorch_train/w0921/16_8_1e-3_bnL2/iter_16_11499_0.001.pth im_uint8.h5 32 8 16 result/16_8_1e-3_bnL2/ecs-gt-4x6x6-11499-pred.h5
-# deug:
-# CUDA_VISIBLE_DEVICES=1 python E_test.py 1 /n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/ /n/coxfs01/donglai/malis_trans/pytorch_train/w0921/16_8_1e-3_bnL2/iter_16_11499_0.001.pth im_uint8.h5 1 1 1 
+# ii=7874;CUDA_VISIBLE_DEVICES=0,1,2,3 python E_test.py -m 1 -s /n/coxfs01/donglai/malis_trans/pytorch_train/w0921/16_8_1e-3_bnL2/iter_16_${ii}_0.001.pth -dn im_uint8.h5 -b 16 -g 4 -c 16 -o result/16_8_1e-3_bnL2/ecs-gt-4x6x6-${ii}-pred.h5
+def get_args():
+    parser = argparse.ArgumentParser(description='Testing Model')
+    # I/O
+    parser.add_argument('-i','--input',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/',
+                        help='input path')
+    parser.add_argument('-s','--snapshot',  default='/n/coxfs01/donglai/malis_trans/pytorch_train/w0921/16_8_1e-3_bnL2/iter_16_11499_0.001.pth',
+                        help='snapshot path')
+    parser.add_argument('-dn','--data-name',  default='im_uint8.h5',
+                        help='image data name')
+    parser.add_argument('-o','--output', default='result/my-pred.h5',
+                        help='output path')
+    # training option
+    parser.add_argument('-m','--model', type=int, default=0,
+                        help='model type')
+    parser.add_argument('-b','--batch-size', type=int,  default=16,
+                        help='batch size')
+    parser.add_argument('-g','--num-gpu', type=int,  default=8,
+                        help='number of gpu')
+    parser.add_argument('-c','--num-cpu', type=int,  default=16,
+                        help='number of cpu')
 
-parser = argparse.ArgumentParser(description='Testing Model')
-# I/O
-parser.add_argument('--i','--input',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/',
-                    help='input path')
-parser.add_argument('--s','--snapshot',  default='/n/coxfs01/donglai/malis_trans/pytorch_train/w0921/16_8_1e-3_bnL2/iter_16_11499_0.001.pth',
-                    help='snapshot path')
-parser.add_argument('--dn','--data-name',  default='im_uint8.h5',
-                    help='image data name')
-parser.add_argument('--o','--output', default='result/my-pred.h5',
-                    help='output path')
-# training option
-parser.add_argument('--m','--model', type=int, choices=model_names, default=0,
-                    help='model type')
-parser.add_argument('--b','--batch-size', type=int,  default=16,
-                    help='batch size')
-parser.add_argument('--g','--num-gpu', type=int,  default=8,
-                    help='number of gpu')
-parser.add_argument('--c','--num-cpu', type=int,  default=16,
-                    help='number of cpu')
-def main():
-    global args
     args = parser.parse_args()
+    return args
+
+def main():
+    args = get_args()
     if not os.path.exists(args.output[:args.output.rfind('/')]):
         os.makedirs(args.output[:args.output.rfind('/')])
 

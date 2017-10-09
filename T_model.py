@@ -52,8 +52,7 @@ class unetVgg3(nn.Module):
             self.conv2 = nn.Sequential(nn.Conv3d(out_size, out_size, 3, padding=pad_size),
                                        nn.LeakyReLU(relu_slope))
     def forward(self, inputs):
-        outputs = self.conv1(inputs)
-        outputs = self.conv2(outputs)
+        outputs = self.conv2(self.conv1(inputs))
         return outputs
 
 
