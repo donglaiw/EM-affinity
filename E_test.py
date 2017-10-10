@@ -40,14 +40,17 @@ def main():
     if not os.path.exists(args.output[:args.output.rfind('/')]):
         os.makedirs(args.output[:args.output.rfind('/')])
 
+    if os.path.exists(args.output):
+        print "already done:",args.output
+        return
     print '1. setup data'
     train_size = np.array(((31,204,204), (3,116,116)));
     if args.data_name[-3:] == '.h5':
-        train_data =  np.array(h5py.File(args.input+args.data_name,'r')['main'],dtype=np.float32)[None,:]/(2.**8)
+        test_data =  np.array(h5py.File(args.input+args.data_name,'r')['main'],dtype=np.float32)[None,:]/(2.**8)
     elif args.data_name[-4:] == '.pkl':
-        train_data =  np.array(pickle.load(args.input+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
+        test_data =  np.array(pickle.load(args.input+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
 
-    test_dataset = VolumeDatasetTest(train_data, data_size=train_data.shape[1:],sample_stride=train_size[1],
+    test_dataset = VolumeDatasetTest(test_data, data_size=test_data.shape[1:],sample_stride=train_size[1],
                                      out_data_size=train_size[0],out_label_size=train_size[1])
 
     test_loader =  torch.utils.data.DataLoader(
@@ -70,6 +73,11 @@ def main():
         for k,v in cp['state_dict'].items():
             cp['state_dict'][k[7:]] = v
             cp['state_dict'].pop(k,None)
+    elif args.num_gpu>1 and (len(cp['state_dict'].keys()[0])<7 or cp['state_dict'].keys()[0][:7]!='module.'):
+        # modify the single gpu model for multi-GPU
+        for k,v in cp['state_dict'].items():
+            cp['state_dict']['module.'+k] = v
+            cp['state_dict'].pop(k,None)
     model.load_state_dict(cp['state_dict'])
 
     print '3. start testing'
@@ -77,7 +85,7 @@ def main():
     # pre-allocate torch cuda tensor
     x = Variable(torch.zeros(args.batch_size, 1, 31, 204, 204).cuda(), requires_grad=False)
     num_batch = test_loader.__len__()
-    output_size = [3]+list(train_data.shape[1:]-(train_size[0]-train_size[1]))
+    output_size = [3]+list(test_data.shape[1:]-(train_size[0]-train_size[1]))
     pred = np.zeros(output_size,dtype=np.float32)
     for batch_id, data in enumerate(test_loader):
         x.data[:data[0].shape[0]].copy_(torch.from_numpy(data[0]))
@@ -87,17 +95,17 @@ def main():
             pp = data[3][j] 
             pred[:,pp[0]:pp[0]+train_size[1][0],
                   pp[1]:pp[1]+train_size[1][1],
-                  pp[2]:pp[2]+train_size[1][2]] = y_pred[j][0].copy()
+                  pp[2]:pp[2]+train_size[1][2]] = y_pred[j].copy()
         print "finish batch: [%d/%d] " % (batch_id, num_batch)
         sys.stdout.flush()
 
     et=time.time()
     print 'testing time: '+str(et-st)+' sec'
-    if args.output is not None:
-        print '4. start saving'
-        outhdf5 = h5py.File(args.output, 'w')
-        outdset = outhdf5.create_dataset('main', pred.shape, np.float32, data=pred)
-        outhdf5.close()
+
+    print '4. start saving'
+    outhdf5 = h5py.File(args.output, 'w')
+    outdset = outhdf5.create_dataset('main', pred.shape, np.float32, data=pred)
+    outhdf5.close()
 
 if __name__ == "__main__":
     main()

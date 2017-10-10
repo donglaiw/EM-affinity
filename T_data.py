@@ -44,7 +44,7 @@ class VolumeDataset(torch.utils.data.Dataset):
         # pre allocation [bad for multi-thread]
         # compute sample size
         self.sample_stride = sample_stride
-        self.sample_size = 1+np.ceil((self.data_size-self.out_data_size+1)/np.array(sample_stride,dtype=np.float32)).astype(int)
+        self.sample_size = 1+np.ceil((self.data_size-self.out_data_size)/np.array(sample_stride,dtype=np.float32)).astype(int)
         self.sample_size_prod = np.array([np.prod(self.sample_size),np.prod(self.sample_size[1:3]),self.sample_size[2]])
 
     def __len__(self): # number of possible position
@@ -96,27 +96,27 @@ class VolumeDataset(torch.utils.data.Dataset):
                                    1+pos[2]:1+pos[2]+self.out_label_size[2]].copy().astype(np.float32)
             if do_reflect is not None:
                 st = np.ones((3,3),dtype=int)
-                tmp_label = self.label[:,pz:2+pz+self.out_label_size[0],py:2+py+self.out_label_size[1],px:2+px+self.out_label_size[2]]
+                tmp_label = self.label[:,pos[0]:2+pos[0]+self.out_label_size[0],
+                                       pos[1]:2+pos[1]+self.out_label_size[1],
+                                       pos[2]:2+pos[2]+self.out_label_size[2]].copy().astype(np.float32)
                 if do_reflect[0]:
-                    out_data  = out_data[:,::-1,:,:]
                     tmp_label = tmp_label[:,::-1,:,:]
                     st[0,0] -= 1
                 if do_reflect[1]:
-                    out_data  = out_data[:,:,::-1,:]
                     tmp_label = tmp_label[:,:,::-1,:]
                     st[1,1] -= 1
                 if do_reflect[2]:
-                    out_data  = out_data[:,:,:,::-1]
                     tmp_label = tmp_label[:,:,:,::-1]
                     st[2,2] -= 1
                 for i in range(3):
                     out_label[i] = tmp_label[i,st[i,0]:st[i,0]+self.out_label_size[0],st[i,1]:st[i,1]+self.out_label_size[1],st[i,2]:st[i,2]+self.out_label_size[2]]
             if do_swapxy:
                 out_label = out_label.transpose((0,1,3,2))
-                out_label[[1,2]] = out_label[[2,1]]
+                out_label[[1,2]] = out_label[[2,1]] # swap x-, y-affinity
             # do local segmentation from affinity
             if self.nhood is not None: # for malis loss, need local segmentation
                 out_seg = malis_core.connected_components_affgraph(out_label.astype(np.int32), self.nhood)[0].astype(np.uint64)
+                #print(out_data.shape, out_label.shape, out_seg.shape, pos)
         return out_data, out_label, out_seg, pos
 
 
@@ -128,7 +128,7 @@ class VolumeDatasetTrain(VolumeDataset):
         pos[0] = index/self.sample_size_prod[1]
         pz_r = index % self.sample_size_prod[1]
         pos[1] = pz_r/self.sample_size_prod[2]
-        pos[0] = pz_r % self.sample_size_prod[2]
+        pos[2] = pz_r % self.sample_size_prod[2]
         return pos
 
 class VolumeDatasetTest(VolumeDataset):
