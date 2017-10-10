@@ -1,7 +1,7 @@
 *.so
 *.swp
 *.swo
-*.pyc
+#*.pyc
 
 # my command history and tmp result
 cmd
