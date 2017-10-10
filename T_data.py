@@ -1,8 +1,4 @@
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
 import torch.utils.data
 import malis_core
 
@@ -52,6 +48,67 @@ class VolumeDataset(torch.utils.data.Dataset):
 
     def index2zyx(self, index):
         raise NotImplementedError("Need to implement index2zyx !")
+
+    def __getitemD__(self, index):
+        # for debug
+        pos = self.index2zyx(index)
+        out_data = self.data[:,pos[0]:pos[0]+self.out_data_size[0],
+                             pos[1]:pos[1]+self.out_data_size[1],
+                             pos[2]:pos[2]+self.out_data_size[2]].copy()
+        out_label = False
+        out_seg = False;
+        # post
+        do_reflect=None
+        do_swapxy=False
+        if self.reflect is not None:
+            # random rotation/relection
+            do_reflect = [self.reflect[x]>0 for x in range(3)]
+            if any(do_reflect):
+                if do_reflect[0]:
+                    out_data  = out_data[:,::-1,:,:]
+                if do_reflect[1]:
+                    out_data  = out_data[:,:,::-1,:]
+                if do_reflect[2]:
+                    out_data  = out_data[:,:,:,::-1]
+        if self.swapxy:
+            do_swapxy = True
+            out_data = out_data.transpose((0,1,3,2))
+        # clip
+        if self.clip is not None:
+            out_data = np.clip(out_data,self.clip[0],self.clip[1])
+
+        # do label
+        if self.label is not None:
+            # pad one on the left, for possible reflection
+            # assume label is the same size as data
+            out_label = self.label[:,1+pos[0]:1+pos[0]+self.out_label_size[0],
+                                   1+pos[1]:1+pos[1]+self.out_label_size[1],
+                                   1+pos[2]:1+pos[2]+self.out_label_size[2]].copy().astype(np.float32)
+            if do_reflect is not None:
+                st = np.ones((3,3),dtype=int)
+                tmp_label = self.label[:,pos[0]:2+pos[0]+self.out_label_size[0],
+                                       pos[1]:2+pos[1]+self.out_label_size[1],
+                                       pos[2]:2+pos[2]+self.out_label_size[2]].copy().astype(np.float32)
+                if do_reflect[0]:
+                    tmp_label = tmp_label[:,::-1,:,:]
+                    st[0,0] -= 1
+                if do_reflect[1]:
+                    tmp_label = tmp_label[:,:,::-1,:]
+                    st[1,1] -= 1
+                if do_reflect[2]:
+                    tmp_label = tmp_label[:,:,:,::-1]
+                    st[2,2] -= 1
+                for i in range(3):
+                    out_label[i] = tmp_label[i,st[i,0]:st[i,0]+self.out_label_size[0],st[i,1]:st[i,1]+self.out_label_size[1],st[i,2]:st[i,2]+self.out_label_size[2]]
+            if do_swapxy:
+                out_label = out_label.transpose((0,1,3,2))
+                out_label[[1,2]] = out_label[[2,1]] # swap x-, y-affinity
+            # do local segmentation from affinity
+            if self.nhood is not None: # for malis loss, need local segmentation
+                out_seg = malis_core.connected_components_affgraph(out_label.astype(np.int32), self.nhood)[0].astype(np.uint64)
+                #print(out_data.shape, out_label.shape, out_seg.shape, pos)
+        return out_data, out_label, out_seg, pos
+
 
     def __getitem__(self, index):
         # todo: add random zoom

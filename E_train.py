@@ -14,27 +14,12 @@ import malis_core
 from T_model import unet3D
 from T_data import VolumeDatasetTrain, np_collate
 import argparse
-
-# for L2 training: re-weight the error by label bias (far more 1 than 0)
-def error_scale(data, clip_low, clip_high):
-    frac_pos = np.clip(data.mean(), clip_low, clip_high) #for binary labels
-    # can't be all zero
-    w_pos = 1.0/(2.0*frac_pos)
-    w_neg = 1.0/(2.0*(1.0-frac_pos))
-    scale = np.add((data >= 0.5) * w_pos, (data < 0.5) * w_neg)
-    return scale
-
-   
-def save_checkpoint(model, optimizer, epoch=1, filename='checkpoint.pth'):
-    torch.save({
-        'epoch': epoch,
-        'state_dict': model.state_dict(),
-        'optimizer' : optimizer.state_dict()
-    }, filename)
+from T_util import error_scale,save_checkpoint 
 
 # dd=0;CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python E_train.py -m 1 -d ${dd} -l 2 -b 16 --iter-total 18125 --iter-save 3625 -lr 0.001 -g 7 -c 16 -o result/16_8_1e-3_bn_d${dd}/ -s result/16_8_1e-3_bn_d${dd}/iter_16_625_0.001.pth 
 
 # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python E_train.py -m 1 -d 2 -l 1 -b 16 --iter-total 625 --iter-save 625 -lr 0.001 -g 8 -c 16 -o result/16_8_1e-3_bn_d2/ 
+# CUDA_VISIBLE_DEVICES=5,6,7,8,9 python E_train.py -m 1 -dc 2 -dr 1 -l 1 -b 16 --iter-total 625 --iter-save 625 -lr 0.001 -g 8 -c 16 -o result/16_8_1e-3_bn_dc2_dr1/ 
 
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
@@ -54,8 +39,10 @@ def get_args():
                         help='model type')
     parser.add_argument('-l','--loss-opt', type=int, default=2,
                         help='loss type')
-    parser.add_argument('-d','--data-opt', type=int,  default=2,
-                        help='data aug type')
+    parser.add_argument('-dc','--data-color-opt', type=int,  default=2,
+                        help='data color aug type')
+    parser.add_argument('-dr','--data-rotation-opt', type=int,  default=0,
+                        help='data rotation aug type')
     parser.add_argument('-lr', type=float, default=0.0001,
                         help='learning rate')
     parser.add_argument('-betas', default='0.9,0.99',
@@ -68,9 +55,9 @@ def get_args():
                         help='total number of iteration')
     parser.add_argument('--iter-save', type=int, default=100,
                         help='number of iteration to save')
-    parser.add_argument('-g','--num-gpu', type=int,  default=8,
+    parser.add_argument('-g','--num-gpu', type=int,  default=1,
                         help='number of gpu')
-    parser.add_argument('-c','--num-cpu', type=int,  default=16,
+    parser.add_argument('-c','--num-cpu', type=int,  default=1,
                         help='number of cpu')
     args = parser.parse_args()
     return args
@@ -101,11 +88,13 @@ def main():
     # add sampler
     nhood = None if args.loss_opt in [0,1] else train_nhood
 
-    color_scale = [(0.8,1.2), (0.9,1.1), None][args.data_opt]
-    color_shift = [(0.2,0.2), (-0.1,0.1), None][args.data_opt]
-    color_clip = [(0.05,0.95), (0.05,0.95), None][args.data_opt]
+    color_scale = [(0.8,1.2), (0.9,1.1), None][args.data_color_opt]
+    color_shift = [(0.2,0.2), (-0.1,0.1), None][args.data_color_opt]
+    color_clip = [(0.05,0.95), (0.05,0.95), None][args.data_color_opt]
+    rot = [[(1,1,1),True],[(0,0,0),False]][args.data_rotation_opt]
     train_dataset = VolumeDatasetTrain(train_data, train_label, nhood, data_size=train_data.shape[1:], 
-                                       reflect=(1,1,1),swapxy=True,color_scale=color_scale,color_shift=color_shift,clip=color_clip,
+                                       reflect=rot[0], swapxy=rot[1],
+                                       color_scale=color_scale,color_shift=color_shift,clip=color_clip,
                                        out_data_size=train_size[0],out_label_size=train_size[1])
 
     train_loader =  torch.utils.data.DataLoader(
@@ -174,7 +163,7 @@ def main():
         t3 = time.time()
         log.write("[Iter %d] loss=%0.2f ModelTime=%.2f TotalTime=%.2f\n" % (iter_id,loss.data[0],t3-t2,t3-t1))
         if (iter_id+1) % args.iter_save == 0: 
-            print ('saving: [%d/%d]') % (iter_id, args.iter_save)
+            print ('saving: [%d/%d]') % (pre_epoch + iter_id, args.iter_save)
             save_checkpoint(model, optimizer, iter_id, sn+('iter_%d_%d_%s.pth' % (args.batch_size,pre_epoch+iter_id+1,str(args.lr))))
         iter_id+=1
         if iter_id == args.iter_total:

@@ -11,6 +11,7 @@ from T_data import VolumeDatasetTest, np_collate
 import argparse
 
 # ii=7874;CUDA_VISIBLE_DEVICES=0,1,2,3 python E_test.py -m 1 -s /n/coxfs01/donglai/malis_trans/pytorch_train/w0921/16_8_1e-3_bnL2/iter_16_${ii}_0.001.pth -dn im_uint8.h5 -b 16 -g 4 -c 16 -o result/16_8_1e-3_bnL2/ecs-gt-4x6x6-${ii}-pred.h5
+# dd=0;ii=625;CUDA_VISIBLE_DEVICES=5,6,7,8,9 python E_test.py -m 1 -s result/16_8_1e-3_bn_d${dd}/iter_16_${ii}_0.001.pth -b 20 -g 5 -c 16 -o result/16_8_1e-3_bn_d${dd}/iter_16_${ii}_0.001-pred.h5
 def get_args():
     parser = argparse.ArgumentParser(description='Testing Model')
     # I/O
