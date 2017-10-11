@@ -1,6 +1,68 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
+
+# for L2 training: re-weight the error by label bias (far more 1 than 0)
+def error_scale(data, clip_low=0.01, clip_high=0.99, thres=0.5):
+    frac_pos = np.clip(data.mean(), clip_low, clip_high) #for binary labels
+    # can't be all zero
+    w_pos = 1.0/(2.0*frac_pos)
+    w_neg = 1.0/(2.0*(1.0-frac_pos))
+    scale = np.add((data >= thres) * w_pos, (data < thres) * w_neg)
+    return scale
+
+   
+def save_checkpoint(model, optimizer, epoch=1, filename='checkpoint.pth'):
+    torch.save({
+        'epoch': epoch,
+        'state_dict': model.state_dict(),
+        'optimizer' : optimizer.state_dict()
+    }, filename)
+
+def weight_filler(ksizes, opt_scale=2.0, opt_norm=2):
+    kk=0
+    if opt_norm==0:# n_in
+        kk = np.prod(ksizes[1:])
+    elif opt_norm==1:# n_out
+        kk = ksizes[0]*np.prod(ksizes[2:])
+    elif opt_norm==2:# (n_in+n_out)/2
+        kk = np.mean(ksizes[:2])*np.prod(ksizes[2:])
+    # opt_scale: 1.0=xavier, 2.0=kaiming, 3.0=caffe
+    ww = np.sqrt(opt_scale/float(kk))
+    return ww
+
+def init_weights(model,opt_init=0):
+    opt=[[2.0,2],[3.0,0]][opt_init]
+    for i in range(3):
+        ksz = model.down[i].conv.conv1._modules['0'].weight.size()
+        model.down[i].conv.conv1._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+        model.down[i].conv.conv1._modules['0'].bias.data.fill_(0.0)
+        ksz = model.down[i].conv.conv2._modules['0'].weight.size()
+        model.down[i].conv.conv2._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+        model.down[i].conv.conv2._modules['0'].bias.data.fill_(0.0)
+    # center
+    ksz = model.center.conv1._modules['0'].weight.size()
+    model.center.conv1._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+    model.center.conv1._modules['0'].bias.data.fill_(0.0)
+    ksz = model.center.conv2._modules['0'].weight.size()
+    model.center.conv2._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+    model.center.conv2._modules['0'].bias.data.fill_(0.0)
+    # up
+    for i in range(3):
+        model.up[i].up.weight.data.fill_(1.0)
+        ksz = model.up[i].up_conv.weight.size()
+        model.up[i].up_conv.weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+        model.up[i].up_conv.bias.data.fill_(0.0)
+        ksz = model.up[i].conv.conv1._modules['0'].weight.size()
+        model.up[i].conv.conv1._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+        model.up[i].conv.conv1._modules['0'].bias.data.fill_(0.0)
+        ksz = model.up[i].conv.conv2._modules['0'].weight.size()
+        model.up[i].conv.conv2._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+        model.up[i].conv.conv2._modules['0'].bias.data.fill_(0.0)
+    ksz = model.final.conv.weight.size()
+    model.final.conv.weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+    model.final.conv.bias.data.fill_(0.0)
 
 def load_weights(model, weights):
     # down

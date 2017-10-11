@@ -11,15 +11,19 @@ from torch.autograd import Variable
 import torch.utils.data
 
 import malis_core
-from T_model import unet3D
+from T_model import unet3D,error_scale,save_checkpoint,init_weights 
 from T_data import VolumeDatasetTrain, np_collate
 import argparse
-from T_util import error_scale,save_checkpoint 
 
-# dd=0;CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python E_train.py -m 1 -d ${dd} -l 2 -b 16 --iter-total 18125 --iter-save 3625 -lr 0.001 -g 7 -c 16 -o result/16_8_1e-3_bn_d${dd}/ -s result/16_8_1e-3_bn_d${dd}/iter_16_625_0.001.pth 
+# dc=0;dr=0;CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 python E_train.py -m 1 -dc ${dc} -dr ${dr} -l 1 -b 16 --iter-total 2000 --iter-save 1000 -lr 0.001 -g 6 -c 16 -o result/16_8_1e-3_bn_dc${dc}_dr${dr}/
 
 # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python E_train.py -m 1 -d 2 -l 1 -b 16 --iter-total 625 --iter-save 625 -lr 0.001 -g 8 -c 16 -o result/16_8_1e-3_bn_d2/ 
-# CUDA_VISIBLE_DEVICES=5,6,7,8,9 python E_train.py -m 1 -dc 2 -dr 1 -l 1 -b 16 --iter-total 625 --iter-save 625 -lr 0.001 -g 8 -c 16 -o result/16_8_1e-3_bn_dc2_dr1/ 
+
+# CUDA_VISIBLE_DEVICES=2,5,6,7,8,9 python E_train.py -m 1 -d 2 -l 1 -b 16 --iter-total 625 --iter-save 625 -lr 0.001 -g 6 -c 16 -o result/16_8_1e-3_bn_dc2_dr1/ -s result/16_8_1e-3_bn_dc2_dr1/iter_16_625_0.001.pth 
+
+# CUDA_VISIBLE_DEVICES=0,1,2,3,4,6 python E_train.py -m 1 -dc 2 -dr 1 -l 0 -b 16 --iter-total 1250 --iter-save 625 -lr 0.001 -g 6 -c 16 -o result/16_8_1e-3_bn_dc2_dr1_nw/ 
+
+# CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python E_train.py -it 0 -m 1 -dc 0 -dr 0 -l 1 -b 14 --iter-total 2500 --iter-save 625 -lr 0.001 -g 7 -c 16 -o result/14_8_1e-3_bn_dc0_dr0_init0/ 
 
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
@@ -35,6 +39,8 @@ def get_args():
     parser.add_argument('-s','--snapshot',  default='',
                         help='pre-train snapshot path')
     # training option
+    parser.add_argument('-it','--init', type=int,  default=0,
+                        help='model initialization type')
     parser.add_argument('-m','--model-opt', type=int,  default=0,
                         help='model type')
     parser.add_argument('-l','--loss-opt', type=int, default=2,
@@ -106,6 +112,10 @@ def main():
         model = unet3D()
     elif args.model_opt == 1: #batchnorm
         model = unet3D(is_batchnorm=True)
+    # initialize model
+    if args.init>=0:
+        init_weights(model,args.init)
+
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
     model.cuda()
     if args.lr==0: #for eval
@@ -123,12 +133,12 @@ def main():
         import malisLoss
         loss_fn = malisLoss.MalisLoss([args.batch_size,3]+list(train_size[1]),1).cuda()
         loss_suf = '_malis_'+str(args.lr)
-        # load previous model
-        if len(args.snapshot)>0:
-            loss_suf += '_'+args.snapshot[:-4] if '/' not in args.snapshot else args.snapshot[args.snapshot.rfind('/')+1:-4]
-            cp = torch.load(args.snapshot)
-            model.load_state_dict(cp['state_dict'])
-            pre_epoch = cp['epoch']
+    # load previous model
+    if len(args.snapshot)>0:
+        loss_suf += '_'+args.snapshot[:-4] if '/' not in args.snapshot else args.snapshot[args.snapshot.rfind('/')+1:-4]
+        cp = torch.load(args.snapshot)
+        model.load_state_dict(cp['state_dict'])
+        pre_epoch = cp['epoch']
 
     print '3. start training'
     log = open(args.output+'log'+loss_suf+'.txt','w',0) # unbuffered, write instantly

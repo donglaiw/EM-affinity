@@ -2,24 +2,6 @@ import h5py
 import numpy as np
 import scipy.misc
 
-# for L2 training: re-weight the error by label bias (far more 1 than 0)
-def error_scale(data, clip_low, clip_high):
-    frac_pos = np.clip(data.mean(), clip_low, clip_high) #for binary labels
-    # can't be all zero
-    w_pos = 1.0/(2.0*frac_pos)
-    w_neg = 1.0/(2.0*(1.0-frac_pos))
-    scale = np.add((data >= 0.5) * w_pos, (data < 0.5) * w_neg)
-    return scale
-
-   
-def save_checkpoint(model, optimizer, epoch=1, filename='checkpoint.pth'):
-    torch.save({
-        'epoch': epoch,
-        'state_dict': model.state_dict(),
-        'optimizer' : optimizer.state_dict()
-    }, filename)
-
-
 def readh5(filename, datasetname,tt=np.float32):
     data=np.array(h5py.File(filename,'r')[datasetname],dtype=tt)
     return data

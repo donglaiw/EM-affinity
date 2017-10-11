@@ -11,7 +11,8 @@ from T_data import VolumeDatasetTest, np_collate
 import argparse
 
 # ii=7874;CUDA_VISIBLE_DEVICES=0,1,2,3 python E_test.py -m 1 -s /n/coxfs01/donglai/malis_trans/pytorch_train/w0921/16_8_1e-3_bnL2/iter_16_${ii}_0.001.pth -dn im_uint8.h5 -b 16 -g 4 -c 16 -o result/16_8_1e-3_bnL2/ecs-gt-4x6x6-${ii}-pred.h5
-# dd=0;ii=625;CUDA_VISIBLE_DEVICES=5,6,7,8,9 python E_test.py -m 1 -s result/16_8_1e-3_bn_d${dd}/iter_16_${ii}_0.001.pth -b 20 -g 5 -c 16 -o result/16_8_1e-3_bn_d${dd}/iter_16_${ii}_0.001-pred.h5
+# dc=2;dr=1;ii=625;ss="_nw";CUDA_VISIBLE_DEVICES=5,6,7,8,9 python E_test.py -m 1 -s result/16_8_1e-3_bn_dc${dc}_dr${dr}${ss}/iter_16_${ii}_0.001.pth -b 20 -g 5 -c 16 -o result/16_8_1e-3_bn_dc${dc}_dr${dr}${ss}/iter_16_${ii}_0.001-pred.h5 -e 30
+
 def get_args():
     parser = argparse.ArgumentParser(description='Testing Model')
     # I/O
@@ -32,6 +33,8 @@ def get_args():
                         help='number of gpu')
     parser.add_argument('-c','--num-cpu', type=int,  default=16,
                         help='number of cpu')
+    parser.add_argument('-e', '--batch-end', type=int,  default=-1,
+                        help='last batch to test')
 
     args = parser.parse_args()
     return args
@@ -99,6 +102,10 @@ def main():
                   pp[2]:pp[2]+train_size[1][2]] = y_pred[j].copy()
         print "finish batch: [%d/%d] " % (batch_id, num_batch)
         sys.stdout.flush()
+        if batch_id == args.batch_end:
+            # early stop for debug and shrink to valid output
+            pred=pred[:,:pp[0]+train_size[1][0]]
+            break
 
     et=time.time()
     print 'testing time: '+str(et-st)+' sec'
