@@ -1,9 +1,0 @@
-.gitignore
-*.so
-*.swp
-*.swo
-*.pyc
-
-# my command history and tmp result
-cmd
-result/
