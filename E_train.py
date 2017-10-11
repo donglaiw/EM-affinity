@@ -11,7 +11,7 @@ from torch.autograd import Variable
 import torch.utils.data
 
 import malis_core
-from T_model import unet3D,error_scale,save_checkpoint,init_weights 
+from T_model import unet3D,error_scale,save_checkpoint,init_weights,decay_lr 
 from T_data import VolumeDatasetTrain, np_collate
 import argparse
 
@@ -51,6 +51,8 @@ def get_args():
                         help='data rotation aug type')
     parser.add_argument('-lr', type=float, default=0.0001,
                         help='learning rate')
+    parser.add_argument('-lr_decay', default='inv,0.001,0.75',
+                        help='learning rate decay')
     parser.add_argument('-betas', default='0.9,0.99',
                         help='beta for adam')
     parser.add_argument('-wd', type=float, default=5e-6,
@@ -65,6 +67,8 @@ def get_args():
                         help='number of gpu')
     parser.add_argument('-c','--num-cpu', type=int,  default=1,
                         help='number of cpu')
+    parser.add_argument('-f', '--num-filter', default='24,72,216,648',
+                        help='number of filters per layer')
     args = parser.parse_args()
     return args
 
@@ -95,7 +99,7 @@ def main():
     nhood = None if args.loss_opt in [0,1] else train_nhood
 
     color_scale = [(0.8,1.2), (0.9,1.1), None][args.data_color_opt]
-    color_shift = [(0.2,0.2), (-0.1,0.1), None][args.data_color_opt]
+    color_shift = [(-0.2,0.2), (-0.1,0.1), None][args.data_color_opt]
     color_clip = [(0.05,0.95), (0.05,0.95), None][args.data_color_opt]
     rot = [[(1,1,1),True],[(0,0,0),False]][args.data_rotation_opt]
     train_dataset = VolumeDatasetTrain(train_data, train_label, nhood, data_size=train_data.shape[1:], 
@@ -108,10 +112,12 @@ def main():
             num_workers=args.num_cpu, pin_memory=True)
 
     print '2. setup model'
+    num_filter = [int(x) for x in args.num_filter.split(',')]
     if args.model_opt == 0: #regular
-        model = unet3D()
+        model = unet3D(filters=num_filter)
     elif args.model_opt == 1: #batchnorm
-        model = unet3D(is_batchnorm=True)
+        model = unet3D(is_batchnorm=True,filters=num_filter)
+
     # initialize model
     if args.init>=0:
         init_weights(model,args.init)
@@ -133,6 +139,7 @@ def main():
         import malisLoss
         loss_fn = malisLoss.MalisLoss([args.batch_size,3]+list(train_size[1]),1).cuda()
         loss_suf = '_malis_'+str(args.lr)
+    lr_decay = args.lr_decay.split(',')
     # load previous model
     if len(args.snapshot)>0:
         loss_suf += '_'+args.snapshot[:-4] if '/' not in args.snapshot else args.snapshot[args.snapshot.rfind('/')+1:-4]
@@ -178,6 +185,8 @@ def main():
         iter_id+=1
         if iter_id == args.iter_total:
             break
+        # lr update
+        decay_lr(optimizer, args.lr, iter_id, lr_decay[0], lr_decay[1], lr_decay[2])
     log.close()
 
 if __name__ == "__main__":

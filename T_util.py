@@ -1,6 +1,44 @@
 import h5py
 import numpy as np
-import scipy.misc
+import sys
+
+# no pytorch env needed
+
+# keras-to-pkl
+def keras2pkl(kerasmodel, output=None):
+    import keras
+    sys.setrecursionlimit(1000000) # o/w won't pickle keras model
+    # bypass model.save(), so that it's easier to save new layers
+    net = pickle.load(open(kerasmodel,'rb'))
+    out={}
+    for layer in net.layers:
+        if layer.trainable_weights:
+            layer={}
+            tmp = layer.get_weights()
+            if len(tmp)==1:
+                layer['w']=tmp[0]
+            elif len(tmp)>1:
+                layer['b']=tmp[1]
+            out[layer.name]=layer
+    if output is None:
+        return out
+    pickle.dump(out,open(output,'wb'))
+# caffe-to-pkl
+def caffe2pkl(prototxt, caffemodel, output=None):
+    import pickle
+    import caffe
+    caffe.set_mode_cpu()
+    net0 = caffe.Net(prototxt,caffe.TEST,weights=caffemodel)
+    out={}
+    for k,v in net0.params.items():
+        layer={}
+        layer['w']=v[0].data
+        if len(v)>1: # deconv layer: no bias term
+            layer['b']=v[1].data
+        out[k]=layer
+    if output is None:
+        return out
+    pickle.dump(out,open(output,'wb'))
 
 def readh5(filename, datasetname,tt=np.float32):
     data=np.array(h5py.File(filename,'r')[datasetname],dtype=tt)
@@ -18,22 +56,35 @@ def readh5k(filename, datasetname):
         data[kk]=array(fid[kk])
     fid.close()
     return data
+
 def writeh5k(filename, datasetname, dtarray):
     fid=h5py.File(filename,'w')
     for kk in datasetname:
         fid.create_dataset(kk,data=dtarray[kk])
     fid.close()
 
-def resizeh5(path_in, path_out, dataset, ratio=(0.5,0.5), interp='bicubic', offset=None):
-    # for half-res
+# for half-res
+def resizeh5(path_in, path_out, dataset, ratio=(0.5,0.5), interp=1, offset=None):
+    # order=1: bilinear
+    from scipy.ndimage.interpolation import zoom
+    # don't use scipy.misc.imresize, output is uint8...
     im = h5py.File( path_in, 'r')[ dataset ][:]
     shape = im.shape
-    im_out = np.zeros((shape[0], int(shape[1]*ratio[0]), int(shape[2]*ratio[1])), dtype=np.uint8)
-
-    for i in xrange(shape[0]):
-        im_out[i,...] = scipy.misc.imresize( im[i,...], size=(int(shape[1]*ratio[0]), int(shape[2]*ratio[1])),  interp=interp)
-    if offset is not None:
-        im_out=im_out[offset[0]:-offset[0],offset[1]:-offset[1],offset[2]:-offset[2],offset[3]:-offset[3]]
+    if len(shape)==3:
+        im_out = np.zeros((shape[0], int(shape[1]*ratio[0]), int(shape[2]*ratio[1])), dtype=im.dtype)
+        for i in xrange(shape[0]):
+            im_out[i,...] = zoom( im[i,...], zoom=ratio,  order=interp)
+        if offset is not None:
+            im_out=im_out[:,offset[1]:-offset[1],offset[2]:-offset[2]]
+    elif len(shape)==4:
+        im_out = np.zeros((shape[0], shape[1], int(shape[2]*ratio[0]), int(shape[3]*ratio[1])), dtype=im.dtype)
+        for i in xrange(shape[0]):
+            for j in xrange(shape[1]):
+                im_out[i,j,...] = zoom( im[i,j,...], ratio, order=interp)
+        if offset is not None:
+            im_out=im_out[:,offset[1]:-offset[1],offset[2]:-offset[2],offset[3]:-offset[3]]
+    if path_out is None:
+        return im_out
     h5py.File( path_out, 'w').create_dataset( dataset, data=im_out )
 
 def bwlabel(mat):

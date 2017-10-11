@@ -35,7 +35,8 @@ def get_args():
                         help='number of cpu')
     parser.add_argument('-e', '--batch-end', type=int,  default=-1,
                         help='last batch to test')
-
+    parser.add_argument('-f', '--num-filter', default='24,72,216,648',
+                        help='number of filters per layer')
     args = parser.parse_args()
     return args
 
@@ -63,10 +64,12 @@ def main():
 
     print '2. load model'
     # create model
+    num_filter = [int(x) for x in args.num_filter.split(',')]
     if args.model == 0: 
-        model = unet3D()
+        model = unet3D(filters=num_filter)
     elif args.model == 1: 
-        model = unet3D(is_batchnorm=True)
+        model = unet3D(is_batchnorm=True,filters=num_filter)
+
     model.cuda()
     model.eval()
     # load parameter

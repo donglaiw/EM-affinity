@@ -84,7 +84,7 @@ class VolumeDataset(torch.utils.data.Dataset):
             out_label = self.label[:,1+pos[0]:1+pos[0]+self.out_label_size[0],
                                    1+pos[1]:1+pos[1]+self.out_label_size[1],
                                    1+pos[2]:1+pos[2]+self.out_label_size[2]].copy().astype(np.float32)
-            if do_reflect is not None:
+            if do_reflect is not None and any(do_reflect):
                 st = np.ones((3,3),dtype=int)
                 tmp_label = self.label[:,pos[0]:2+pos[0]+self.out_label_size[0],
                                        pos[1]:2+pos[1]+self.out_label_size[1],
@@ -151,7 +151,7 @@ class VolumeDataset(torch.utils.data.Dataset):
             out_label = self.label[:,1+pos[0]:1+pos[0]+self.out_label_size[0],
                                    1+pos[1]:1+pos[1]+self.out_label_size[1],
                                    1+pos[2]:1+pos[2]+self.out_label_size[2]].copy().astype(np.float32)
-            if do_reflect is not None:
+            if do_reflect is not None and any(do_reflect):
                 st = np.ones((3,3),dtype=int)
                 tmp_label = self.label[:,pos[0]:2+pos[0]+self.out_label_size[0],
                                        pos[1]:2+pos[1]+self.out_label_size[1],

@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+
+
 # for L2 training: re-weight the error by label bias (far more 1 than 0)
 def error_scale(data, clip_low=0.01, clip_high=0.99, thres=0.5):
     frac_pos = np.clip(data.mean(), clip_low, clip_high) #for binary labels
@@ -12,13 +14,30 @@ def error_scale(data, clip_low=0.01, clip_high=0.99, thres=0.5):
     scale = np.add((data >= thres) * w_pos, (data < thres) * w_neg)
     return scale
 
-   
-def save_checkpoint(model, optimizer, epoch=1, filename='checkpoint.pth'):
-    torch.save({
-        'epoch': epoch,
-        'state_dict': model.state_dict(),
-        'optimizer' : optimizer.state_dict()
-    }, filename)
+def decay_lr(optimizer, base_lr, iter, policy='inv',gamma=0.0001, power=0.75, step=100)   
+    if policy=='fixed':
+        return
+    elif policy=='inv':
+        new_lr = base_lr * ((1+gamma*iter)**(-power)) 
+    elif policy=='exp':
+        new_lr = base_lr * (gamma**iter)
+    elif policy=='step':
+        new_lr = base_lr * (gamma**(np.floor(iter/step)))
+    for group in optimizer.param_groups:
+        group['lr'] = new_lr 
+
+def save_checkpoint(model, filename='checkpoint.pth', optimizer=None, epoch=1):
+    if optimizer is None:
+        torch.save({
+            'epoch': epoch,
+            'state_dict': model.state_dict(),
+        }, filename)
+    else:
+        torch.save({
+            'epoch': epoch,
+            'state_dict': model.state_dict(),
+            'optimizer' : optimizer.state_dict()
+        }, filename)
 
 def weight_filler(ksizes, opt_scale=2.0, opt_norm=2):
     kk=0
@@ -133,7 +152,7 @@ class unetUp(nn.Module):
     # in1: skip layer, in2: previous layer
     def __init__(self, in1_size, in2_size, out_size, pad_size, relu_slope, up_kernel, up_stride, upC_kernel, num_group, has_bias, is_batchnorm):
         super(unetUp, self).__init__()
-        self.up = nn.ConvTranspose3d(in2_size, in2_size, up_kernel, up_stride,groups=num_group, bias=has_bias)
+        self.up = nn.ConvTranspose3d(in2_size, in2_size, up_kernel, up_stride, groups=num_group, bias=has_bias)
         self.up_conv = nn.Conv3d(in2_size, out_size, upC_kernel)
         self.conv = unetVgg3(out_size+in1_size, out_size, pad_size, relu_slope, is_batchnorm)
 
@@ -156,8 +175,10 @@ class unetFinal(nn.Module):
 
 
 class unet3D(nn.Module):
-    def __init__(self, in_channels=1, out_channels=3, filters=[24,72,216,648], has_bias=False, num_group=[24,72,216,648], vgg_pad=0, relu_slope=0.005, pool_kernel=(1,2,2), pool_stride=(1,2,2), upC_kernel=(1,1,1),is_batchnorm=False):
+    def __init__(self, in_channels=1, out_channels=3, filters=[24,72,216,648], has_bias=False, num_group=None, vgg_pad=0, relu_slope=0.005, pool_kernel=(1,2,2), pool_stride=(1,2,2), upC_kernel=(1,1,1),is_batchnorm=False):
         super(unet3D, self).__init__()
+        if num_group is None:
+            num_group = filters
         self.is_batchnorm = is_batchnorm
 
         self.down =  nn.ModuleList([unetDown(in_channels, filters[0], vgg_pad, relu_slope, pool_kernel, pool_stride, self.is_batchnorm), 
@@ -178,5 +199,3 @@ class unet3D(nn.Module):
         up2 = self.up[1](down2_u, up3)
         up1 = self.up[2](down1_u, up2)
         return self.final(up1)
-
-
