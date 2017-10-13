@@ -223,34 +223,29 @@ def weight_filler(ksizes, opt_scale=2.0, opt_norm=2):
 def init_weights(model,opt_init=0):
     opt=[[2.0,2],[3.0,0]][opt_init]
     for i in range(3):
-        ksz = model.down[i].conv.conv1._modules['0'].weight.size()
-        model.down[i].conv.conv1._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-        model.down[i].conv.conv1._modules['0'].bias.data.fill_(0.0)
-        ksz = model.down[i].conv.conv2._modules['0'].weight.size()
-        model.down[i].conv.conv2._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-        model.down[i].conv.conv2._modules['0'].bias.data.fill_(0.0)
+        for j in range(2):
+            ksz = model.down[i].conv.convs[j].cbr._modules['0'].weight.size()
+            model.down[i].conv.conv.convs[j].cbr._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+            model.down[i].conv.convs[j].cbr._modules['0'].bias.data.fill_(0.0)
     # center
-    ksz = model.center.conv1._modules['0'].weight.size()
-    model.center.conv1._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-    model.center.conv1._modules['0'].bias.data.fill_(0.0)
-    ksz = model.center.conv2._modules['0'].weight.size()
-    model.center.conv2._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-    model.center.conv2._modules['0'].bias.data.fill_(0.0)
+    for j in range(2):
+        ksz = model.center.convs[j].cbr._modules['0'].weight.size()
+        model.center.convs[j].cbr._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+        model.center.convs[j].cbr._modules['0'].bias.data.fill_(0.0)
     # up
     for i in range(3):
         model.up[i].up.weight.data.fill_(1.0)
-        ksz = model.up[i].up_conv.weight.size()
-        model.up[i].up_conv.weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-        model.up[i].up_conv.bias.data.fill_(0.0)
-        ksz = model.up[i].conv.conv1._modules['0'].weight.size()
-        model.up[i].conv.conv1._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-        model.up[i].conv.conv1._modules['0'].bias.data.fill_(0.0)
-        ksz = model.up[i].conv.conv2._modules['0'].weight.size()
-        model.up[i].conv.conv2._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-        model.up[i].conv.conv2._modules['0'].bias.data.fill_(0.0)
+        for j in range(2):
+        ksz = model.up[i].up_conv.convs[0].cbr._modules['0'].weight.size()
+        model.up[i].up_conv.convs[0].cbr._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+        model.up[i].up_conv.convs[0].cbr._modules['0'].bias.data.fill_(0.0)
+        for j in range(2):
+            ksz = model.up[i].conv.convs[j].cbr._modules['0'].weight.size()
+            model.up[i].conv.convs[j].cbr._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+            model.up[i].conv.convs[j].cbr._modules['0'].bias.data.fill_(0.0)
     ksz = model.final.conv.weight.size()
-    model.final.conv.weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-    model.final.conv.bias.data.fill_(0.0)
+    model.final.convs[0].cbr.weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+    model.final.convs[0].cbr.bias.data.fill_(0.0)
 
 def load_weights_pkl(model, weights):
     # down
