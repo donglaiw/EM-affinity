@@ -173,7 +173,7 @@ class VolumeDataset(torch.utils.data.Dataset):
             # do local segmentation from affinity
             if self.nhood is not None: # for malis loss, need local segmentation
                 out_seg = malis_core.connected_components_affgraph(out_label.astype(np.int32), self.nhood)[0].astype(np.uint64)
-                #print(out_data.shape, out_label.shape, out_seg.shape, pos)
+        # print(out_data.shape, out_label.shape, pos)
         return out_data, out_label, out_seg, pos
 
 
