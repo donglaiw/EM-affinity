@@ -94,8 +94,8 @@ def bwlabel(mat):
         out[i] = np.count_nonzero(mat==i)
     return out
 
-def genSegMalis(gt): # given input seg map, widen the seg border    
-    gg3=gt
+def seg2dilate(gg3, num_iter=2, stel_opt=1): # given input seg map, widen the seg border    
+    import scipy.ndimage.morphology as skmorph
     gg3_dz = np.zeros(gg3.shape).astype(np.uint32)
     gg3_dz[1:,:,:] = (np.diff(gg3,axis=0))
     gg3_dy = np.zeros(gg3.shape).astype(np.uint32)
@@ -104,9 +104,30 @@ def genSegMalis(gt): # given input seg map, widen the seg border
     gg3_dx[:,:,1:] = (np.diff(gg3,axis=2))
 
     gg3g = ((gg3_dx+gg3_dy)>0)
-    #stel=np.array([[1, 1],[1,1]]).astype(bool)
-    stel=np.array([[0, 1, 0],[1,1,1], [0,1,0]]).astype(bool)
-    #stel=np.array([[1,1,1,1],[1, 1, 1, 1],[1,1,1,1],[1,1,1,1]]).astype(bool)
+    if stel_opt==0:
+        stel=np.array([[1, 1],[1,1]]).astype(bool)
+    elif stel_opt==1:
+        stel=np.array([[0, 1, 0],[1,1,1], [0,1,0]]).astype(bool)
+    elif stel_opt==2:
+        stel=np.array([[1,1,1,1],[1, 1, 1, 1],[1,1,1,1],[1,1,1,1]]).astype(bool)
     gg3gd=np.zeros(gg3g.shape)
     for i in range(gg3g.shape[0]):
-        gg3gd[i,:,:]=skmorph.binary_dilation(gg3g[i,:,:],structure=stel,iterations=2)
+        gg3gd[i,:,:]=skmorph.binary_dilation(gg3g[i,:,:],structure=stel,iterations=num_iter)
+    return (1.0-gg3gd)*gg3
+
+def seg2aff(seg_name, dataset_name='main', pad=0, out_name=None):
+    import os
+    if out_name is not None and os.path.exists(out_name):
+        print out_name+' is already done'
+        return
+    import malis_core
+    train_nhood = malis_core.mknhood3d()
+    train_seg = np.array(h5py.File(seg_name,'r')[dataset_name])
+    train_label = malis_core.seg_to_affgraph(train_seg,train_nhood)
+    if pad == 1:
+        train_label = np.lib.pad(train_label,((0,0),(1,1),(1,1),(1,1)),mode='reflect')
+    if out_name is None:
+        return train_label
+    from T_util import writeh5
+    writeh5(out_name, 'main', train_label)
+

@@ -1,7 +1,5 @@
-# channel pruning model
 import torch
 from torch.autograd import Variable
-from torchvision import models
 import sys
 import numpy as np
 import torchvision
@@ -9,52 +7,36 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import dataset
-from prune import *
 import argparse
 from operator import itemgetter
 from heapq import nsmallest
 import time
-
+# 1. pruner
 class FilterPrunner:
 	def __init__(self, model):
 		self.model = model
-		self.reset()
-	
-	def reset(self):
-		self.filter_ranks = {}
+		self.setup()
+    
+    def setup(self):
+        raise NotImplementedError("Need to implement setup !")
 
-	def forward(self, x):
-		self.activations = []
-		self.gradients = []
-		self.grad_index = 0
-		self.activation_to_layer = {}
+    def forward(self,x):
+        raise NotImplementedError("Need to implement forward !")
 
-		activation_index = 0
-		for layer, (name, module) in enumerate(self.model.features._modules.items()):
-		    x = module(x)
-		    if isinstance(module, torch.nn.modules.conv.Conv2d):
-		    	x.register_hook(self.compute_rank)
-		        self.activations.append(x)
-		        self.activation_to_layer[activation_index] = layer
-		        activation_index += 1
-
-		return self.model.classifier(x.view(x.size(0), -1))
+    def add_conv(layer, activation_index):    
+        # add one conv layer
+        self.activation_to_layer[activation_index] = layer
+        self.filter_ranks[activation_index] = torch.FloatTensor(layer.weight.size(0)).zero_().cuda()
+        activation_index += 1
+        return activation_index
 
 	def compute_rank(self, grad):
-		activation_index = len(self.activations) - self.grad_index - 1
+        # reverse forward order
+		activation_index = self.num_conv - self.grad_index - 1
 		activation = self.activations[activation_index]
-		values = \
-			torch.sum((activation * grad), dim = 0).\
-				sum(dim=2).sum(dim=3)[0, :, 0, 0].data
-		
+		values = torch.sum((activation * grad), dim = 0).sum(dim=2).sum(dim=3)[0, :, 0, 0].data
 		# Normalize the rank by the filter dimensions
-		values = \
-			values / (activation.size(0) * activation.size(2) * activation.size(3))
-
-		if activation_index not in self.filter_ranks:
-			self.filter_ranks[activation_index] = \
-				torch.FloatTensor(activation.size(1)).zero_().cuda()
-
+		values = values / (activation.size(0) * activation.size(2) * activation.size(3))
 		self.filter_ranks[activation_index] += values
 		self.grad_index += 1
 
@@ -63,7 +45,6 @@ class FilterPrunner:
 		for i in sorted(self.filter_ranks.keys()):
 			for j in range(self.filter_ranks[i].size(0)):
 				data.append((self.activation_to_layer[i], j, self.filter_ranks[i][j]))
-
 		return nsmallest(num, data, itemgetter(2))
 
 	def normalize_ranks_per_layer(self):
@@ -74,7 +55,6 @@ class FilterPrunner:
 
 	def get_prunning_plan(self, num_filters_to_prune):
 		filters_to_prune = self.lowest_ranking_filters(num_filters_to_prune)
-
 		# After each of the k filters are prunned,
 		# the filter index of the next filters change since the model is smaller.
 		filters_to_prune_per_layer = {}
@@ -82,18 +62,89 @@ class FilterPrunner:
 			if l not in filters_to_prune_per_layer:
 				filters_to_prune_per_layer[l] = []
 			filters_to_prune_per_layer[l].append(f)
-
 		for l in filters_to_prune_per_layer:
 			filters_to_prune_per_layer[l] = sorted(filters_to_prune_per_layer[l])
 			for i in range(len(filters_to_prune_per_layer[l])):
 				filters_to_prune_per_layer[l][i] = filters_to_prune_per_layer[l][i] - i
-
 		filters_to_prune = []
 		for l in filters_to_prune_per_layer:
 			for i in filters_to_prune_per_layer[l]:
 				filters_to_prune.append((l, i))
-
 		return filters_to_prune				
+
+class FilterPrunnerVGG(FilterPrunner):
+    # pruner for VGG-Imagenet
+	def __init__(self, model):
+        super(FilterPrunnerVGG, self).__init__(model)
+ 
+    def add_conv_seq(module_items, activation_index):    
+        for layer, (name, module) in enumerate(module_items):
+            if 'Conv' in module.__str__(): # prune conv
+                activation_index = add_conv(layer, activation_index)
+        return activation_index
+
+    def setup(self):
+		self.filter_ranks = {}
+		self.activation_to_layer = {}
+        self.num_conv = add_conv_seq(self.model.features._modules.items())
+
+	def forward(self, x):
+		self.activations = [None]*self.num_conv
+		self.grad_index = 0
+		activation_index = 0
+		for layer, (name, module) in enumerate(self.model.features._modules.items()):
+		    x = module(x)
+		    if isinstance(module, torch.nn.modules.conv.Conv2d):
+                # add backward hook
+		    	x.register_hook(self.compute_rank)
+		        self.activations[activation_index] = x
+		        activation_index += 1
+		return self.model.classifier(x.view(x.size(0), -1))
+
+class FilterPrunnerUnet3D(FilterPrunner):
+    # pruner for Unet
+	def __init__(self, model):
+        super(FilterPrunnerUnet3D, self).__init__(model)
+ 
+    def add_conv_seq(module_items, activation_index):    
+        # add conv seqs
+        for layer, (name, module) in enumerate(module_items):
+            if hasattr(module, 'cbr'):
+                activation_index = add_conv(module.cbr._modules['0'], activation_index)
+        return activation_index
+   
+    def setup(self):
+		self.filter_ranks = {}
+		self.activation_to_layer = {}
+		activation_index = 0
+        # add backward hook
+        b1_names = model._modules.keys()
+        for b1_name in b1_names: # down, center, up, final
+            if b1_name in ['center', 'final']:
+                activation_index = add_conv_seq(model._modules[b1_name]._modules['convs']._modules.items(),activation_index)
+            else:
+                b2_names = model._modules[b1_name]._modules.keys() 
+                for b2_name in b2_names: # each layer: '0', '1'
+                    b3_names = model._modules[b1_name]._modules[b2_name]._modules.keys()
+                    for b3_name in b3_names: # up, up_conv, conv
+                        if 'conv' in b3_name:
+                            activation_index = add_conv_seq(model._modules[b1_name]._modules[b2_name]._modules[b3_name]._modules['convs']._modules.items(),activation_index)
+                        elif b3_name=='up':
+                            activation_index = add_conv(model._modules[b1_name]._modules[b2_name]._modules['up'], activation_index)
+        self.num_conv = activation_index
+
+	def forward(self, x):
+		self.activations = [None]*self.num_conv
+		self.grad_index = 0
+		activation_index = 0
+		for layer, (name, module) in enumerate(self.model.features._modules.items()):
+		    x = module(x)
+		    if isinstance(module, torch.nn.modules.conv.Conv2d):
+		    	x.register_hook(self.compute_rank)
+		        self.activations[activation_index] = x
+		        activation_index += 1
+		return self.model.classifier(x.view(x.size(0), -1))
+
 
 class PrunningFineTuner_unet3D:
 	def __init__(self, train_data_loader, model, criterion):

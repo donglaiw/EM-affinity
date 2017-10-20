@@ -11,7 +11,6 @@ class VolumeDataset(torch.utils.data.Dataset):
     def __init__(self,
                  data, label=None, nhood = None,
                  data_size = (0,0,0),
-                 label_size = (0,0,0),
                  zoom_range = None, #((0.8,1.2),(0.8,1.2),(0.8,1.2))
                  shift_range = None, #(0,0,0)
                  reflect = None, #(0,0,0),
@@ -47,11 +46,20 @@ class VolumeDataset(torch.utils.data.Dataset):
         return self.sample_size_prod[0]
 
     def index2zyx(self, index):
-        raise NotImplementedError("Need to implement index2zyx !")
+        # int division = int(floor(.))
+        pos = [0,0,0]
+        pos[0] = index/self.sample_size_prod[1]
+        pz_r = index % self.sample_size_prod[1]
+        pos[1] = pz_r/self.sample_size_prod[2]
+        pos[2] = pz_r % self.sample_size_prod[2]
+        return pos
+    
+    def getPos(self, index):
+        raise NotImplementedError("Need to implement getPos() !")
 
     def __getitemD__(self, index):
         # for debug
-        pos = self.index2zyx(index)
+        pos = self.getPos(index)
         out_data = self.data[:,pos[0]:pos[0]+self.out_data_size[0],
                              pos[1]:pos[1]+self.out_data_size[1],
                              pos[2]:pos[2]+self.out_data_size[2]].copy()
@@ -112,7 +120,7 @@ class VolumeDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         # todo: add random zoom
-        pos = self.index2zyx(index)
+        pos = self.getPos(index)
         out_data = self.data[:,pos[0]:pos[0]+self.out_data_size[0],
                              pos[1]:pos[1]+self.out_data_size[1],
                              pos[2]:pos[2]+self.out_data_size[2]].copy()
@@ -179,22 +187,13 @@ class VolumeDataset(torch.utils.data.Dataset):
 
 
 class VolumeDatasetTrain(VolumeDataset):
-    def index2zyx(self, index):
-        # int division = int(floor(.))
-        pos = [0,0,0]
-        pos[0] = index/self.sample_size_prod[1]
-        pz_r = index % self.sample_size_prod[1]
-        pos[1] = pz_r/self.sample_size_prod[2]
-        pos[2] = pz_r % self.sample_size_prod[2]
-        return pos
+    def getPos(self, index):
+        return self.index2zyx(index)
+
 
 class VolumeDatasetTest(VolumeDataset):
-    def index2zyx(self, index):
-        pos = [0,0,0]
-        pos[0] = index/self.sample_size_prod[1]
-        pz_r = index % self.sample_size_prod[1]
-        pos[1] = pz_r/self.sample_size_prod[2]
-        pos[2] = pz_r % self.sample_size_prod[2]
+    def getPos(self, index):
+        pos = self.index2zyx(index)
         # take care of the boundary case
         for i in range(3):
             if pos[i] != self.sample_size[i]-1:

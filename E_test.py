@@ -26,11 +26,11 @@ def get_args():
     # training option
     parser.add_argument('-m','--model', type=int, default=0,
                         help='model type') 
-    parser.add_argument('-ps', '--pad-size', type=int, default=0,                                                                   
-                        help='pad size')                                                                                            
-    parser.add_argument('-pt', '--pad-type', default='constant,0',                                                                  
-                        help='pad type')                                                                                            
-    parser.add_argument('-bn', '--has-BN', type=int, default=0,                                                                     
+    parser.add_argument('-ps', '--pad-size', type=int, default=0,
+                        help='pad size')
+    parser.add_argument('-pt', '--pad-type', default='constant,0',
+                        help='pad type')
+    parser.add_argument('-bn', '--has-BN', type=int, default=0,
                         help='use BatchNorm')
     parser.add_argument('-b','--batch-size', type=int,  default=16,
                         help='batch size')
@@ -52,12 +52,13 @@ def get_data(args):
         test_data =  np.array(pickle.load(args.input+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
 
     test_dataset = VolumeDatasetTest(test_data, data_size=test_data.shape[1:],sample_stride=model_io_size[1],
-                                     out_data_size=model_io_size[0],out_label_size=model_io_size[1])
+                    out_data_size=model_io_size[0],out_label_size=model_io_size[1])
 
     test_loader =  torch.utils.data.DataLoader(
             test_dataset, batch_size= args.batch_size, shuffle=False, collate_fn = np_collate,
             num_workers= args.num_cpu, pin_memory=True)
-
+    
+    # pre-allocate torch cuda tensor
     test_var = Variable(torch.zeros(args.batch_size, 1, 31, 204, 204).cuda(), requires_grad=False)
     output_size = [3]+list(test_data.shape[1:]-(model_io_size[0]-model_io_size[1]))
     return test_loader, test_var, output_size, model_io_size
@@ -65,11 +66,11 @@ def get_data(args):
 def get_model(args):
     # create model
     num_filter = [int(x) for x in args.num_filter.split(',')]
-    model = unet3D(has_BN=True,filters=num_filter,
+    model = unet3D(has_BN=args.has_BN==1,filters=num_filter,
                   pad_vgg_size = args.pad_size, pad_vgg_type = args.pad_type)
     model.cuda()
-    # load parameter
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
+    # load parameter
     cp = load_checkpoint(args.snapshot, args.num_gpu)
     model.load_state_dict(cp['state_dict'])
     return model
@@ -91,7 +92,6 @@ def main():
     print '3. start testing'
     model.eval()
     st=time.time()
-    # pre-allocate torch cuda tensor
     num_batch = test_loader.__len__()
     pred = np.zeros(output_size,dtype=np.float32)
     for batch_id, data in enumerate(test_loader):

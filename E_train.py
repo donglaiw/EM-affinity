@@ -26,6 +26,10 @@ def get_args():
                         help='image data')
     parser.add_argument('-ln','--label-name',  default='seg-groundtruth2-malis.h5',
                         help='segmentation label')
+    parser.add_argument('-lnd','--label-dataset-name',  default='main',
+                        help='dataset name in label')
+    parser.add_argument('-dnd','--data-dataset-name',  default='main',
+                        help='dataset name in data')
     parser.add_argument('-o','--output', default='result/train/',
                         help='output path')
     parser.add_argument('-s','--snapshot',  default='',
@@ -42,6 +46,8 @@ def get_args():
                         help='pad type')
     parser.add_argument('-bn', '--has-BN', type=int, default=0,
                         help='use BatchNorm')
+    parser.add_argument('-do', '--has-dropout', type=float, default=0,
+                        help='use dropout')
     parser.add_argument('-it','--init', type=int,  default=-1,
                         help='model initialization type')
     # data option
@@ -49,9 +55,11 @@ def get_args():
                         help='data color aug type')
     parser.add_argument('-dr','--data-rotation-opt', type=int,  default=0,
                         help='data rotation aug type')
-    # training option
-    parser.add_argument('-l','--loss-opt', type=int, default=2,
+    parser.add_argument('-l','--loss-opt', type=int, default=0,
                         help='loss type')
+    parser.add_argument('-lw','--loss-weight-opt', type=float, default=2.0,
+                        help='weighted loss type')
+    # training option
     parser.add_argument('-lr', type=float, default=0.0001,
                         help='learning rate')
     parser.add_argument('-lr_decay', default='inv,0.001,0.75',
@@ -83,7 +91,7 @@ def get_data(args):
         aff_suf='2';
     train_offset = (model_io_size[0]-model_io_size[1])/2
     if args.data_name[-3:] == '.h5':
-        train_data =  np.array(h5py.File(args.input+args.data_name,'r')['main'],dtype=np.float32)[None,:]/(2.**8)
+        train_data =  np.array(h5py.File(args.input+args.data_name,'r')[args.data_dataset_name],dtype=np.float32)[None,:]/(2.**8)
     elif args.data_name[-4:] == '.pkl':
         train_data =  np.array(pickle.load(args.input+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
 
@@ -92,7 +100,7 @@ def get_data(args):
     if os.path.exists(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5'):
         train_label = np.array(h5py.File(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5','r')['main'])
     else: # pre-compute for faster i/o
-        train_seg = np.array(h5py.File(args.input+args.label_name,'r')['main'])
+        train_seg = np.array(h5py.File(args.input+args.label_name,'r')[args.label_dataset_name])
         train_label = malis_core.seg_to_affgraph(train_seg,train_nhood)
         if aff_suf=='2':
             train_label = np.lib.pad(train_label,((0,0),(1,1),(1,1),(1,1)),mode='reflect')
@@ -102,15 +110,15 @@ def get_data(args):
     if train_offset[0]!=0:
         train_label = train_label[:,train_offset[0]-1:-train_offset[0]+1,train_offset[1]-1:-train_offset[1]+1,train_offset[2]-1:-train_offset[2]+1]
     # add sampler
-    nhood = None if args.loss_opt in [0,1] else train_nhood
+    nhood = None if args.loss_opt in [0] else train_nhood
     color_scale = [(0.8,1.2), (0.9,1.1), None][args.data_color_opt]
     color_shift = [(-0.2,0.2), (-0.1,0.1), None][args.data_color_opt]
     color_clip = [(0.05,0.95), (0.05,0.95), None][args.data_color_opt]
     rot = [[(1,1,1),True],[(0,0,0),False]][args.data_rotation_opt]
     train_dataset = VolumeDatasetTrain(train_data, train_label, nhood, data_size=train_data.shape[1:], 
-                                       reflect=rot[0], swapxy=rot[1],
-                                       color_scale=color_scale,color_shift=color_shift,clip=color_clip,
-                                       out_data_size=model_io_size[0],out_label_size=model_io_size[1])
+                           reflect=rot[0], swapxy=rot[1],
+                           color_scale=color_scale,color_shift=color_shift,clip=color_clip,
+                           out_data_size=model_io_size[0],out_label_size=model_io_size[1])
     train_loader =  torch.utils.data.DataLoader(
             train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn = np_collate,
             num_workers=args.num_cpu, pin_memory=True)
@@ -118,29 +126,31 @@ def get_data(args):
     # pre-allocate torch cuda tensor
     train_vars = [None]*3
     train_vars[0] = Variable(torch.zeros(args.batch_size, 1, model_io_size[0][0], model_io_size[0][1], model_io_size[0][2]).cuda(), requires_grad=False)
-    if args.loss_opt in [0,1]:
+    if args.loss_opt == 0: # for L2
         train_vars[1] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
-        if args.loss_opt in [1]:
+        if args.loss_weight_opt > 0: # for weighted L2
             train_vars[2] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
 
-    return train_loader, train_vars
+    return train_loader, train_vars,model_io_size
 
-def get_model(args):
+def get_model(args, model_io_size):
     num_filter = [int(x) for x in args.num_filter.split(',')]
-    model = unet3D(has_BN=args.has_BN==1, filters=num_filter, 
+    model = unet3D(has_BN=args.has_BN==1, has_dropout=args.has_dropout, filters=num_filter, 
                    pad_vgg_size = args.pad_size, pad_vgg_type = args.pad_type)
     # initialize model
     if args.init>=0:
         init_weights(model,args.init)
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
     model.cuda()
-    if args.loss_opt in [0,1]: # weighted L2 training
+    if args.loss_opt == 0: # L2 training
         loss_fn = torch.nn.MSELoss()
         save_suf = '_L2_'+str(args.lr)
-    elif args.loss_opt == 2: # malis training
+    elif args.loss_opt == 1: # malis training
         import malisLoss
-        loss_fn = malisLoss.MalisLoss([args.batch_size,3]+list(model_io_size[1]),1).cuda()
+        loss_fn = malisLoss.MalisLoss([args.batch_size,3]+list(model_io_size[1]),args.loss_weight_opt, 1).cuda()
         save_suf = '_malis_'+str(args.lr)
+    save_suf += '_'+str(args.loss_weight_opt)
+
     # load previous model
     pre_epoch = 0
     if len(args.snapshot)>0:
@@ -152,12 +162,14 @@ def get_model(args):
     logger = open(args.output+'log'+save_suf+'.txt','w',0) # unbuffered, write instantly
     return model, loss_fn, pre_epoch, logger
 
-def get_optimizer():
+def get_optimizer(args, model, pre_epoch=0):
     betas = [float(x) for x in args.betas.split(',')]
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=betas, weight_decay=args.wd)
     lr_decay = args.lr_decay.split(',')
     for i in range(1,len(lr_decay)):
         lr_decay[i] =  float(lr_decay[i])
+    if pre_epoch != 0:
+        decay_lr(optimizer, args.lr, pre_epoch-1, lr_decay[0], lr_decay[1], lr_decay[2])
     return optimizer, lr_decay
 
 def main():
@@ -167,19 +179,23 @@ def main():
         os.makedirs(sn)
 
     print '1. setup data'
-    train_loader, train_vars = get_data()
+    train_loader, train_vars,model_io_size = get_data(args)
 
     print '2. setup model'
-    model, loss_fn, pre_epoch, logger = get_model()
+    model, loss_fn, pre_epoch, logger = get_model(args, model_io_size)
 
     print '3. setup optimizer'
-    optimizer, lr_decay = get_optimizer()
+    optimizer, lr_decay = get_optimizer(args, model, pre_epoch)
 
-    print '3. start training'
-    model.train()
+    print '4. start training'
+    if args.lr == 0:
+        model.eval()
+    else:
+        model.train()
 
     for iter_id, data in enumerate(train_loader):
         optimizer.zero_grad()
+
         # copy data
         t1 = time.time()
         train_vars[0].data.copy_(torch.from_numpy(data[0]))
@@ -187,18 +203,19 @@ def main():
         # forward-backward
         t2 = time.time()
         y_pred = model(train_vars[0])
-        if args.loss_opt == 0: # L2
+        if args.loss_opt == 0: # L2 loss
             train_vars[1].data.copy_(torch.from_numpy(data[1]))
-            loss = loss_fn(y_pred, train_vars[1])
-        elif args.loss_opt == 1: # weighted L2
-            train_vars[1].data.copy_(torch.from_numpy(data[1]))
-            train_vars[2].data.copy_(torch.from_numpy(error_scale(data[1],0.01,0.99)))
-            loss = loss_fn(y_pred*train_vars[2], train_vars[1]*train_vars[2])
-        elif args.loss_opt == 2: # malis loss
+            if args.loss_weight_opt == 0: # regular
+                loss = loss_fn(y_pred, train_vars[1])
+            else: # weighted
+                train_vars[2].data.copy_(torch.from_numpy(error_scale(data[1],args.loss_weight_opt,0.01,0.99)))
+                loss = loss_fn(y_pred*train_vars[2], train_vars[1]*train_vars[2])
+        elif args.loss_opt == 1: # malis loss
             loss = loss_fn(y_pred, data[2], data[1])
-        loss.backward()
-        optimizer.step()
-        
+        if args.lr > 0:
+            loss.backward()
+            optimizer.step()
+         
         # print log
         t3 = time.time()
         logger.write("[Iter %d] loss=%0.2f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (iter_id,loss.data[0],optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
@@ -206,11 +223,14 @@ def main():
             print ('saving: [%d/%d]') % (pre_epoch + iter_id, args.iter_save)
             save_checkpoint(model, sn+('iter_%d_%d_%s.pth' % (args.batch_size,pre_epoch+iter_id+1,str(args.lr))), optimizer, iter_id)
         iter_id+=1
+        #pickle.dump({'o':data[3], 'd':data[0], 'l':data[1], 'w':data[2]},open('result/sample/train_'+str(iter_id)+'.pkl','wb'))
+
         if iter_id == args.iter_total:
             break
-
         # lr update
-        decay_lr(optimizer, args.lr, pre_epoch+iter_id, lr_decay[0], lr_decay[1], lr_decay[2])
+        if args.lr > 0:
+            decay_lr(optimizer, args.lr, pre_epoch+iter_id, lr_decay[0], lr_decay[1], lr_decay[2])
+
     logger.close()
 
 if __name__ == "__main__":
