@@ -23,15 +23,20 @@ def get_args():
                         help='image data name')
     parser.add_argument('-o','--output', default='result/my-pred.h5',
                         help='output path')
-    # training option
-    parser.add_argument('-m','--model', type=int, default=0,
-                        help='model type') 
+    # model option
+    parser.add_argument('-a','--opt-arch', type=str,  default='0,0;0;0,0;0',
+                        help='model type')
+    parser.add_argument('-f', '--num-filter', default='24,72,216,648',
+                        help='number of filters per layer')
     parser.add_argument('-ps', '--pad-size', type=int, default=0,
                         help='pad size')
     parser.add_argument('-pt', '--pad-type', default='constant,0',
                         help='pad type')
     parser.add_argument('-bn', '--has-BN', type=int, default=0,
                         help='use BatchNorm')
+    parser.add_argument('-do', '--has-dropout', type=float, default=0,
+                        help='use dropout')
+    # data option
     parser.add_argument('-b','--batch-size', type=int,  default=16,
                         help='batch size')
     parser.add_argument('-g','--num-gpu', type=int,  default=8,
@@ -40,8 +45,6 @@ def get_args():
                         help='number of cpu')
     parser.add_argument('-e', '--batch-end', type=int,  default=-1,
                         help='last batch to test')
-    parser.add_argument('-f', '--num-filter', default='24,72,216,648',
-                        help='number of filters per layer')
     args = parser.parse_args()
     return args
 def get_data(args):
@@ -66,8 +69,10 @@ def get_data(args):
 def get_model(args):
     # create model
     num_filter = [int(x) for x in args.num_filter.split(',')]
-    model = unet3D(has_BN=args.has_BN==1,filters=num_filter,
-                  pad_vgg_size = args.pad_size, pad_vgg_type = args.pad_type)
+    opt_arch = [[int(x) for x in y.split(',')] for y in  args.opt_arch.split(';')]
+    model = unet3D(filters=num_filter,opt_arch = opt_arch,
+                   has_BN = args.has_BN==1, has_dropout = args.has_dropout,
+                   pad_size = args.pad_size, pad_type= args.pad_type)
     model.cuda()
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
     # load parameter

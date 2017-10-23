@@ -12,7 +12,8 @@ def get_args():
                         help='caffe model prototxt')
     parser.add_argument('-cm','--caffe-model', type=str,  default='/n/coxfs01/fgonda/experiments/3d/ecs-3d/affinity_20_3/net_iter_10000.caffemodel',
                         help='caffe model')
-
+    parser.add_argument('-bn', '--has-BN', type=int, default=0,
+                        help='use BatchNorm')
     parser.add_argument('-km','--keras-model', type=str,  default='/n/coxfs01/fgonda/experiments/3d/ecs-3d/affinity_20_3/net_iter_10000.caffemodel',
                         help='caffe model')
     parser.add_argument('-o','--output', type=str,  default='../../malis_trans/unet3d/net_weight_10k',
@@ -34,10 +35,14 @@ def main():
     elif args.opt==1: 
         import pickle
         from T_model import load_weights_pkl,unet3D,save_checkpoint
-        model = unet3D(filters=[int(x) for x in args.num_filter.split(',')])
+        model = unet3D(filters=[int(x) for x in args.num_filter.split(',')],
+                      has_BN=args.has_BN==1)
         ww=pickle.load(open(args.output+'.pkl','rb'))
         load_weights_pkl(model,ww)
-        save_checkpoint(model, args.output+'.pth')
+        sn =''
+        if args.has_BN==1:
+            sn+='_bn'
+            save_checkpoint(model, args.output+sn+'.pth')
 
 if __name__ == "__main__":
     main()

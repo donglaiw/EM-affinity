@@ -4,12 +4,15 @@
 void preCompute(const uint64_t* conn_dims, const int32_t* nhood_data, const uint64_t* nhood_dims,
         uint64_t* pre_ve, uint64_t* pre_prodDims, int32_t* pre_nHood);
 
-void malis_loss_weights_cpp_pair(const uint64_t* seg,
+// add precomputation and both pos/neg
+void malis_loss_weights_cpp_both(const uint64_t* seg,
                const uint64_t* conn_dims, const int32_t* nhood_data, const uint64_t* nhood_dims,
                const float* edgeWeight, float* nPairPerEdge,
-               const uint64_t* pre_ve, const uint64_t* pre_prodDims, const int32_t* pre_nHood);
+               const uint64_t* pre_ve, const uint64_t* pre_prodDims, const int32_t* pre_nHood,
+               const int pos, const float weight_opt);
 
-void malis_loss_weights_cpp_pos(const uint64_t* seg,
+// add precomputation
+void malis_loss_weights_cpp_pre(const uint64_t* seg,
                const uint64_t* conn_dims, const int32_t* nhood_data, const uint64_t* nhood_dims,
                const float* edgeWeight, float* nPairPerEdge,
                const uint64_t* pre_ve, const uint64_t* pre_prodDims, const int32_t* pre_nHood, const int pos);

@@ -11,7 +11,9 @@ from torch.autograd import Variable
 import torch.utils.data
 
 import malis_core
-from T_model import unet3D,error_scale,save_checkpoint,load_checkpoint,init_weights,decay_lr 
+from T_model import unet3D,weightedMSE,malisWeight,labelWeight
+from T_model import save_checkpoint,load_checkpoint,decay_lr 
+        
 from T_data import VolumeDatasetTrain, np_collate
 import argparse
 
@@ -36,7 +38,7 @@ def get_args():
                         help='pre-train snapshot path')
 
     # model option
-    parser.add_argument('-m','--model-opt', type=int,  default=0,
+    parser.add_argument('-a','--opt-arch', type=str,  default='0,0;0;0,0;0',
                         help='model type')
     parser.add_argument('-f', '--num-filter', default='24,72,216,648',
                         help='number of filters per layer')
@@ -59,7 +61,7 @@ def get_args():
                         help='loss type')
     parser.add_argument('-lw','--loss-weight-opt', type=float, default=2.0,
                         help='weighted loss type')
-    # training option
+    # optimization option
     parser.add_argument('-lr', type=float, default=0.0001,
                         help='learning rate')
     parser.add_argument('-lr_decay', default='inv,0.001,0.75',
@@ -74,6 +76,8 @@ def get_args():
                         help='total number of iteration')
     parser.add_argument('--iter-save', type=int, default=100,
                         help='number of iteration to save')
+    parser.add_argument('-e', '--pre-epoch', type=int, default=0,
+                        help='previous number of epoch')
     parser.add_argument('-g','--num-gpu', type=int,  default=1,
                         help='number of gpu')
     parser.add_argument('-c','--num-cpu', type=int,  default=1,
@@ -125,46 +129,61 @@ def get_data(args):
 
     # pre-allocate torch cuda tensor
     train_vars = [None]*3
+    # input data
     train_vars[0] = Variable(torch.zeros(args.batch_size, 1, model_io_size[0][0], model_io_size[0][1], model_io_size[0][2]).cuda(), requires_grad=False)
-    if args.loss_opt == 0: # for L2
-        train_vars[1] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
-        if args.loss_weight_opt > 0: # for weighted L2
-            train_vars[2] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
+    # gt label
+    train_vars[1] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
+    if not (args.loss_opt == 0 and args.loss_weight_opt == 0):
+        # weight
+        train_vars[2] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
 
     return train_loader, train_vars,model_io_size
 
 def get_model(args, model_io_size):
     num_filter = [int(x) for x in args.num_filter.split(',')]
-    model = unet3D(has_BN=args.has_BN==1, has_dropout=args.has_dropout, filters=num_filter, 
-                   pad_vgg_size = args.pad_size, pad_vgg_type = args.pad_type)
-    # initialize model
-    if args.init>=0:
-        init_weights(model,args.init)
+    opt_arch = [[int(x) for x in y.split(',')] for y in  args.opt_arch.split(';')]
+    model = unet3D(filters=num_filter,opt_arch = opt_arch,
+                   has_BN = args.has_BN==1, has_dropout = args.has_dropout,
+                   pad_size = args.pad_size, pad_type= args.pad_type)
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
     model.cuda()
+    conn_dims = [args.batch_size,3]+list(model_io_size[1])
     if args.loss_opt == 0: # L2 training
-        loss_fn = torch.nn.MSELoss()
+        loss_w = labelWeight(conn_dims, args.loss_weight_opt) 
         save_suf = '_L2_'+str(args.lr)
     elif args.loss_opt == 1: # malis training
-        import malisLoss
-        loss_fn = malisLoss.MalisLoss([args.batch_size,3]+list(model_io_size[1]),args.loss_weight_opt, 1).cuda()
+        loss_w = malisWeight(conn_dims, args.loss_weight_opt)
         save_suf = '_malis_'+str(args.lr)
     save_suf += '_'+str(args.loss_weight_opt)
 
     # load previous model
-    pre_epoch = 0
+    pre_epoch = args.pre_epoch
     if len(args.snapshot)>0:
         save_suf += '_'+args.snapshot[:args.snapshot.rfind('.')] if '/' not in args.snapshot else args.snapshot[args.snapshot.rfind('/')+1:args.snapshot.rfind('.')]
         cp = load_checkpoint(args.snapshot, args.num_gpu)
         model.load_state_dict(cp['state_dict'])
-        pre_epoch = cp['epoch']
+        if pre_epoch == 0:
+            pre_epoch = cp['epoch']
 
     logger = open(args.output+'log'+save_suf+'.txt','w',0) # unbuffered, write instantly
-    return model, loss_fn, pre_epoch, logger
+    return model, loss_w, pre_epoch, logger
 
 def get_optimizer(args, model, pre_epoch=0):
     betas = [float(x) for x in args.betas.split(',')]
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=betas, weight_decay=args.wd)
+    frozen_id = []
+    if args.num_gpu==1 and model.up[0].opt[0]==0: # hacked upsampling layer
+        for i in range(len(model.up)):
+            frozen_id +=  list(map(id,model.up[i].up._modules['0'].parameters()))
+    elif model.module.up[0].opt[0]==0: # hacked upsampling layer
+        for i in range(len(model.module.up)):
+            frozen_id +=  list(map(id,model.module.up[i].up._modules['0'].parameters()))
+    frozen_params = filter(lambda p: id(p) in frozen_id, model.parameters())
+    rest_params = filter(lambda p: id(p) not in frozen_id, model.parameters())
+    optimizer = torch.optim.Adam([
+        {'params': rest_params},
+        {'params': frozen_params, 'lr':0.0, 'weight_decay':0.0, 'betas':[0.0, 0.0]}],
+        lr=args.lr, betas=betas, weight_decay=args.wd)
+
     lr_decay = args.lr_decay.split(',')
     for i in range(1,len(lr_decay)):
         lr_decay[i] =  float(lr_decay[i])
@@ -182,7 +201,7 @@ def main():
     train_loader, train_vars,model_io_size = get_data(args)
 
     print '2. setup model'
-    model, loss_fn, pre_epoch, logger = get_model(args, model_io_size)
+    model, loss_w, pre_epoch, logger = get_model(args, model_io_size)
 
     print '3. setup optimizer'
     optimizer, lr_decay = get_optimizer(args, model, pre_epoch)
@@ -203,15 +222,15 @@ def main():
         # forward-backward
         t2 = time.time()
         y_pred = model(train_vars[0])
-        if args.loss_opt == 0: # L2 loss
-            train_vars[1].data.copy_(torch.from_numpy(data[1]))
-            if args.loss_weight_opt == 0: # regular
-                loss = loss_fn(y_pred, train_vars[1])
-            else: # weighted
-                train_vars[2].data.copy_(torch.from_numpy(error_scale(data[1],args.loss_weight_opt,0.01,0.99)))
-                loss = loss_fn(y_pred*train_vars[2], train_vars[1]*train_vars[2])
-        elif args.loss_opt == 1: # malis loss
-            loss = loss_fn(y_pred, data[2], data[1])
+        train_vars[1].data.copy_(torch.from_numpy(data[1]))
+        if args.loss_opt == 0 and args.loss_weight_opt == 0: # regular L2
+                loss = weigthedMSE(y_pred, train_vars[1])
+        else: # weighted
+            if args.loss_opt == 0: # L2
+                train_vars[2].data.copy_(torch.from_numpy(loss_w.getWeight(data[1])))
+            elif args.loss_opt == 1: # malis
+                train_vars[2].data.copy_(torch.from_numpy(loss_w.getWeight(y_pred.data.cpu().numpy(), data[1], data[2])))
+            loss = weightedMSE(y_pred, train_vars[1], train_vars[2])
         if args.lr > 0:
             loss.backward()
             optimizer.step()
@@ -223,6 +242,7 @@ def main():
             print ('saving: [%d/%d]') % (pre_epoch + iter_id, args.iter_save)
             save_checkpoint(model, sn+('iter_%d_%d_%s.pth' % (args.batch_size,pre_epoch+iter_id+1,str(args.lr))), optimizer, iter_id)
         iter_id+=1
+        #print optimizer.param_groups[0]['lr'],model.up[0].up._modules['0'].weight.data.mean()
         #pickle.dump({'o':data[3], 'd':data[0], 'l':data[1], 'w':data[2]},open('result/sample/train_'+str(iter_id)+'.pkl','wb'))
 
         if iter_id == args.iter_total:

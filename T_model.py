@@ -2,22 +2,80 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-
+import malis_core
+# --------------------------------
+# malis function: gt aff -> weight
 # --------------------------------
 # 1. building block
-# level-1: one conv-bn-relu neuron with different padding
-class CBR3D(nn.Module):
-    def __init__(self, in_size=1, out_size=1, kernel_size=1, stride_size=1, pad_size=0, pad_type='constant,0', has_bias=False, has_BN=False, relu_slope=-1):
-        super(CBR3D, self).__init__()
+## level-0: utility layer
+class malisWeight():
+    def __init__(self, conn_dims, opt_weight=0.5, opt_nb=1):
+        # pre-compute 
+        self.opt_weight=opt_weight
+        if opt_nb==1:
+            self.nhood_data = malis_core.mknhood3d(1).astype(np.int32).flatten()
+        else:
+            self.nhood_data = malis_core.mknhood3d(1,1.8).astype(np.uint64).flatten()
+        self.nhood_dims = np.array((3,3),dtype=np.uint64)
+        self.num_vol = conn_dims[0]
+        self.conn_dims = np.array(conn_dims[1:]).astype(np.uint64) # dim=4
+        self.pre_ve, self.pre_prodDims, self.pre_nHood = malis_core.malis_init(self.conn_dims, self.nhood_data, self.nhood_dims)
+        self.weight = np.zeros(conn_dims,dtype=np.float32)#pre-allocate
+
+    def getWeight(self, x_cpu, aff_cpu, seg_cpu):
+        for i in range(self.num_vol):
+            self.weight[i] = malis_core.malis_loss_weights_both(seg_cpu[i].flatten(), self.conn_dims, self.nhood_data, self.nhood_dims, self.pre_ve, self.pre_prodDims, self.pre_nHood, x_cpu[i].flatten(), aff_cpu[i].flatten(), self.opt_weight).reshape(self.conn_dims)
+        return self.weight
+
+
+# for L2 training: re-weight the error by label bias (far more 1 than 0)
+class labelWeight():
+    def __init__(self, conn_dims, opt_weight=2, clip_low=0.01, clip_high=0.99, thres=0.5):
+        self.opt_weight=opt_weight
+        self.clip_low=clip_low
+        self.clip_high=clip_high
+        self.thres = thres
+        self.weight = np.zeros(conn_dims,dtype=np.float32)#pre-allocate
+        self.num_vol = conn_dims[0]
+
+    def getWeight(self, data, seg=None):
+        w_pos = self.opt_weight
+        w_neg = 1.0-self.opt_weight
+        for i in range(self.num_vol):
+            if self.opt_weight==2:
+                frac_pos = np.clip(data[i].mean(), self.clip_low, self.clip_high) #for binary labels
+                # can't be all zero
+                w_pos = 1.0/(2.0*frac_pos)
+                w_neg = 1.0/(2.0*(1.0-frac_pos))
+            self.weight[i] = np.add((data[i] >= thres) * w_pos, (data[i] < thres) * w_neg)
+        return self.weight
+
+def mergeCrop(x1, x2):
+    # x1 left, x2 right
+    offset = [(x2.size()[x]-x1.size()[x])/2 for x in range(x1.dim()-1,1,-1) for i in range(2)] 
+    return torch.cat([x2, F.pad(x1,offset,'replicate',0)], 1)
+
+def weightedMSE(input, target, weight=None):
+    if weight is None:
+        return torch.sum((input - target) ** 2)/input.size(0)
+    else:
+        return torch.sum(weight * (input - target) ** 2)/input.size(0)
+
+# level-1: one conv-bn-relu-dropout neuron with different padding
+class CBRD3D(nn.Module):
+    def __init__(self, in_num=1, out_num=1, kernel_size=1, stride_size=1, pad_size=0, pad_type='constant,0', has_bias=False, has_BN=False, relu_slope=-1, has_dropout=0):
+        super(CBRD3D, self).__init__()
         p_conv = pad_size if pad_type == 'constant,0' else 0 #  0-padding in conv layer 
-        layers = [nn.Conv3d(in_size, out_size, kernel_size=kernel_size, padding=p_conv, stride=stride_size, bias=has_bias)] 
+        layers = [nn.Conv3d(in_num, out_num, kernel_size=kernel_size, padding=p_conv, stride=stride_size, bias=has_bias)] 
         if has_BN:
-            layers.append(nn.BatchNorm3d(out_size))
+            layers.append(nn.BatchNorm3d(out_num))
         if relu_slope==0:
             layers.append(nn.ReLU(inplace=True))
         elif relu_slope>0:
             layers.append(nn.LeakyReLU(relu_slope))
-        self.cbr = nn.Sequential(*layers)
+        if has_dropout>0:
+            layers.append(nn.Dropout3d(has_dropout, True))
+        self.cbrd = nn.Sequential(*layers)
         self.pad_type = pad_type
         if pad_size==0:
             self.pad_size = 0
@@ -28,25 +86,24 @@ class CBR3D(nn.Module):
 
     def forward(self, x):
         if isinstance(self.pad_size,int) or self.pad_type == 'constant,0': # no padding or 0-padding
-            return self.cbr(x)
+            return self.cbrd(x)
         else:
             if ',' in self.pad_type:# constant padding
-                return self.cbr(F.pad(x,self.pad_size,'constant',self.pad_value))
+                return self.cbrd(F.pad(x,self.pad_size,'constant',self.pad_value))
             else:
-                if self.pad_type=='reflect':# reflect: hack with numpy (not implemented in)...
-                    return self.cbr(pad5DReflect(x,self.pad_size))
-                else: # other types
-                    return self.cbr(F.pad(x,self.pad_size,self.pad_type))
+                if self.pad_type!='reflect':# reflect: hack with numpy (not implemented in)...
+                    return self.cbrd(F.pad(x,self.pad_size,self.pad_type))
 
 # level-2: list of level-1 blocks
 class unetResidualBottleneck(nn.Module):
     expansion = 4
-    def __init__(self, in_size, out_size, stride=1, pad_size=1, pad_type='constant,0', downsample=None):
-        super(residualBottleneck, self).__init__(pad_size, pad_type)
-        self.convs = nn.Sequential(
-            CBR3D(in_size, out_size, 1, has_BN=True),
-            CBR3D(out_size, out_size, 3, stride, pad_size, pad_type, has_BN=True),
-            CBR3D(out_size, out_size*4, 1, has_BN=True))
+    def __init__(self, in_num, out_num, 
+                 cfg={'stride':1, 'pad_size':1, 'pad_type':'', 'downsample':None, 'has_BN':True}):
+        super(residualBottleneck, self).__init__()
+        self.conv = nn.Sequential(
+            CBRD3D(in_num, out_num, 1, has_BN=cfg['has_BN']),
+            CBRD3D(out_num, out_num, 3, cfg.stride, cfg['pad_size'], cfg['pad_type'], has_BN=True),
+            CBRD3D(out_num, out_num*4, 1, has_BN=cfg['has_BN']))
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
@@ -62,17 +119,18 @@ class unetResidualBottleneck(nn.Module):
 
 class unetResidualBasic(nn.Module):
     expansion = 1
-    def __init__(self, in_size, out_size, stride=1, pad_size=1, pad_type='constant,0', downsample=None):
+    def __init__(self, in_num, out_num, 
+                 cfg={'stride':1, 'pad_size':1, 'pad_type':'', 'downsample':None, 'has_BN':True}):
         super(unetResidual, self).__init__()
         self.convs = nn.Sequential(
-            CBR3D(in_size, out_size, 3, stride, pad_size, pad_type, has_BN=True, relu_slope=0),
-            CBR3D(in_size, out_size, 3, 1,      pad_size, pad_type, has_BN=True))
+            CBRD3D(in_num, out_num, 3, cfg.stride, cfg['pad_size'], cfg['pad_type'], has_BN=cfg['has_BN'], relu_slope=0),
+            CBRD3D(in_num, out_num, 3, 1,     cfg['pad_size'], cfg['pad_type'], has_BN=cfg['has_BN']))
         self.downsample = downsample
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
         residual = x
-        out = self.convs(x)
+        out = self.conv(x)
         if self.downsample is not None:
             residual = self.downsample(x)
         out += residual
@@ -80,75 +138,100 @@ class unetResidualBasic(nn.Module):
         return out
 
 class unetVgg(nn.Module):# default: basic convolution kernel
-    def __init__(self, num_conv, kernel_size, in_size, out_size, stride_size=1, pad_size=0, pad_type='constant,0', has_BN=False, relu_slope=-1, has_dropout=0):
+    def __init__(self, num_conv, in_num, out_num, kernel_size=3, stride_size=1, 
+        cfg={'pad_size':0, 'pad_type':'', 'has_bias':True, 'has_BN':False, 'relu_slope':0.005, 'has_dropout':0}):
         super(unetVgg, self).__init__()
-        layers= [CBR3D(in_size, out_size, kernel_size, stride_size, pad_size, pad_type, True, has_BN, relu_slope)]
+        layers= [CBRD3D(in_num, out_num, kernel_size, stride_size, 
+                        cfg['pad_size'], cfg['pad_type'], cfg['has_bias'], cfg['has_BN'], cfg['relu_slope'], cfg['has_dropout'])]
         for i in range(num_conv-1):
-            if has_dropout>0:
-                layers.append(nn.Dropout3d(has_dropout, True))
-            layers.append(CBR3D(out_size, out_size, kernel_size, stride_size, pad_size, pad_type, True, has_BN, relu_slope))
+            if i==num_conv-2: # no dropout in the last layer
+                cfg['has_dropout'] = 0
+            layers.append(CBRD3D(out_num, out_num, kernel_size, stride_size, cfg['pad_size'], cfg['pad_type'], cfg['has_bias'], cfg['has_BN'], cfg['relu_slope'], cfg['has_dropout']))
         self.convs = nn.Sequential(*layers)
 
     def forward(self, inputs):
-        # print('vgg:',outputs.size())
         return self.convs(inputs)
 
 # level-3: down-up module
+# bug for grad from rhs
 class unetDown(nn.Module):
-    def __init__(self, in_size, out_size, pad_size, pad_type, has_BN, relu_slope, pool_kernel, pool_stride, has_dropout):
+    def __init__(self, opt, in_num, out_num, 
+        cfg_down={'pool_kernel': (1,2,2), 'pool_stride': (1,2,2)},
+        cfg_conv={'pad_size':0, 'pad_type':'', 'has_bias':True, 'has_BN':False, 'relu_slope':-1, 'has_dropout':0} ):
         super(unetDown, self).__init__()
-        self.conv = unetVgg(2, 3, in_size, out_size, 1, pad_size, pad_type, has_BN, relu_slope, has_dropout)
-        self.down = nn.MaxPool3d(pool_kernel, pool_stride)
-
+        self.opt = opt
+        if opt[0]==0: # max-pool
+            self.down = nn.MaxPool3d(cfg_down['pool_kernel'], cfg_down['pool_stride'])
+        if opt[1]==0: # vgg-3x3 
+            self.conv = unetVgg(2, in_num, out_num, cfg=cfg_conv)
     def forward(self, x):
-        outputs1 = self.conv(x)
-        outputs2 = self.down(outputs1)
-        return outputs1, outputs2
+        x1 = self.conv(x)
+        x2 = self.down(x1)
+        return x1, x2
 
 class unetUp(nn.Module):
     # in1: skip layer, in2: previous layer
-    def __init__(self, in2_size, up_kernel, up_stride, upC_kernel, num_group, has_bias, 
-                 out_size, p_upad_size, p_upad_type, 
-                 in1_size, p_out_size, p_out_type, has_BN, relu_slope, has_dropout):
+    def __init__(self, opt, in_num, outUp_num, inLeft_num, outConv_num,
+        cfg_up={'pool_kernel': (1,2,2), 'pool_stride': (1,2,2)},
+        cfg_conv={'pad_size':0, 'pad_type':'', 'has_bias':True, 'has_BN':False, 'relu_slope':0.005, 'has_dropout':0}):
         super(unetUp, self).__init__()
-        self.up = nn.ConvTranspose3d(in2_size, in2_size, up_kernel, up_stride, groups=num_group, bias=has_bias)
-        self.up_conv = unetVgg(1, upC_kernel, in2_size, out_size, 1, p_upad_size, p_upad_type)
-        self.conv = unetVgg(2, 3, out_size+in1_size, out_size, 1, p_out_size, p_out_type, has_BN, relu_slope, has_dropout)
+        self.opt = opt
+        if opt[0]==0: # group deconv
+            self.up = nn.Sequential(nn.ConvTranspose3d(in_num, in_num, cfg_up['pool_kernel'], cfg_up['pool_stride'], groups=in_num, bias=False),
+                CBRD3D(in_num, outUp_num, 1, 1, 0, '', True))
+            # not supported yet...
+            # upsample + crop
+            # self.up = nn.Sequential(nn.Upsample(scale_factor=cfg_up.pool_kernel, mode='nearest'),
+            #    CBRD3D(in_num, outUp_num, 1, 1, 0, '', True))
+        elif opt[0]==1: # upsample+conv
+            self.up = nn.ConvTranspose3d(in_num, in_num, cfg_up['pool_kernel'], cfg_up['pool_stride'], groups=in_num, bias=False)
+            outUp_num = in_num
+        if opt[1]==0: # deconv
+            self.conv = unetVgg(2, outUp_num+inLeft_num, outConv_num, cfg=cfg_conv)
 
     def forward(self, x1, x2):
         # inputs1 from left-side (bigger)
-        outputs2 = self.up_conv(self.up(x2))
-        offset = [(x1.size()[x+2]-outputs2.size()[x+2])/2 for x in range(3)]
-        offset2 = [x1.size()[x+2]-outputs2.size()[x+2]-offset[x] for x in range(3)]
-        # print(x1.size(),outputs2.size())
-        # crop merge
-        if max(offset2)==0:
-            outputs1 = x1[:,:, offset[0]:, offset[1]:, offset[2]:]
-        else:
-            outputs1 = x1[:,:, offset[0]:-offset2[0], offset[1]:-offset2[1], offset[2]:-offset2[2]]
-        # print('up:',outputs1.size(),outputs2.size())
-        return self.conv(torch.cat([outputs2, outputs1], 1))
+        x2_up = self.up(x2)
+        mc = mergeCrop(x1, x2_up)
+        return self.conv(mc)
 
-# level-1: one conv-bn-relu neuron
-class unet3D(nn.Module):
-    def __init__(self, in_size=1, out_size=3, filters=[24,72,216,648], has_bias=False, num_group=None, pad_vgg_size=0, pad_vgg_type='constant,0', pad_up_size=0, pad_up_type='constant,0',relu_slope=0.005, pool_kernel=(1,2,2), pool_stride=(1,2,2), upC_kernel=(1,1,1),has_BN=False, has_dropout=0):
+class unetCenter(nn.Module):
+    def __init__(self, opt, in_num, out_num,
+        cfg_conv={'pad_size':0, 'pad_type':'', 'has_bias':True, 'has_BN':False, 'relu_slope':0.005, 'has_dropout':0} ):
+        super(unetCenter, self).__init__()
+        self.opt = opt
+        if opt[0]==0: # vgg
+            self.conv = unetVgg(2, in_num, out_num, cfg=cfg_conv)
+    def forward(self, x):
+        return self.conv(x)
+
+class unetFinal(nn.Module):
+    def __init__(self, opt, in_num, out_num):
+        super(unetFinal, self).__init__()
+        self.opt = opt
+        if opt[0]==0: # vgg
+            self.conv = CBRD3D(in_num, out_num, 1, 1, 0, '', True)
+    def forward(self, x):
+        return F.sigmoid(self.conv(x))
+
+
+class unet3D(nn.Module): # symmetric unet
+    def __init__(self, opt_arch=[[0,0],[0],[0,0],[0]], in_num=1, out_num=3, filters=[24,72,216,648],
+                 has_bias=True, has_BN=False,has_dropout=0,pad_size=0,pad_type='',relu_slope=0.005,
+                 pool_kernel=(1,2,2), pool_stride=(1,2,2)):
         super(unet3D, self).__init__()
-        if num_group is None:
-            num_group = filters
+        cfg_conv={'has_bias':has_bias,'has_BN':has_BN, 'has_dropout':has_dropout, 'pad_size':pad_size, 'pad_type':pad_type, 'relu_slope':relu_slope}
+        cfg_pool={'pool_kernel':pool_kernel, 'pool_stride':pool_stride}
         self.depth = len(filters)-1 
-        filters_in = [in_size] + filters[:-1]
+        filters_in = [in_num] + filters[:-1]
         self.down = nn.ModuleList([
-                    unetDown(filters_in[x], filters_in[x+1], pad_vgg_size, pad_vgg_type, has_BN, relu_slope, pool_kernel, pool_stride, has_dropout) 
+                    unetDown(opt_arch[0], filters_in[x], filters_in[x+1], cfg_pool, cfg_conv) 
                     for x in range(len(filters)-1)]) 
-
-        self.center = unetVgg(2, 3, filters[-2], filters[-1], 1, pad_vgg_size, pad_vgg_type, has_BN, relu_slope, has_dropout)
-        
+        self.center = unetCenter(opt_arch[1], filters[-2], filters[-1], cfg_conv)
         self.up = nn.ModuleList([
-                    unetUp(filters[x], pool_kernel, pool_stride, upC_kernel, num_group[x], has_bias,
-                       filters[x-1], pad_up_size, pad_up_type, 
-                       filters[x-1], pad_vgg_size, pad_vgg_type, has_BN, relu_slope, has_dropout)
+                    unetUp(opt_arch[2], filters[x], filters[x-1], filters[x-1], filters[x-1], cfg_pool, cfg_conv)
                     for x in range(len(filters)-1,0,-1)])
-        self.final = unetVgg(1, 1, filters[0], out_size)
+        self.final = unetFinal(opt_arch[3], filters[0], out_num) 
 
     def forward(self, x):
         down_u = [None]*self.depth
@@ -158,25 +241,9 @@ class unet3D(nn.Module):
         for i in range(self.depth):
              x = self.up[i](down_u[self.depth-1-i],x)
         return self.final(x)
-        #return F.sigmoid(self.final(x))
-
 
 # --------------------------------
 # 2. utility function
-# for L2 training: re-weight the error by label bias (far more 1 than 0)
-def error_scale(data, opt=2, clip_low=0.01, clip_high=0.99, thres=0.5):
-    if opt==2:
-        frac_pos = np.clip(data.mean(), clip_low, clip_high) #for binary labels
-        # can't be all zero
-        w_pos = 1.0/(2.0*frac_pos)
-        w_neg = 1.0/(2.0*(1.0-frac_pos))
-    else:
-        w_pos = opt
-        w_neg = 1.0-opt
-
-    scale = np.add((data >= thres) * w_pos, (data < thres) * w_neg)
-    return scale
-
 def decay_lr(optimizer, base_lr, iter, policy='inv',gamma=0.0001, power=0.75, step=100): 
     if policy=='fixed':
         return
@@ -187,7 +254,8 @@ def decay_lr(optimizer, base_lr, iter, policy='inv',gamma=0.0001, power=0.75, st
     elif policy=='step':
         new_lr = base_lr * (gamma**(np.floor(iter/step)))
     for group in optimizer.param_groups:
-        group['lr'] = new_lr 
+        if group['lr'] != 0.0: # not frozen
+            group['lr'] = new_lr 
 
 def save_checkpoint(model, filename='checkpoint.pth', optimizer=None, epoch=1):
     if optimizer is None:
@@ -232,27 +300,27 @@ def init_weights(model,opt_init=0):
     opt=[[2.0,2],[3.0,0]][opt_init]
     for i in range(3):
         for j in range(2):
-            ksz = model.down[i].conv.convs[j].cbr._modules['0'].weight.size()
-            model.down[i].conv.conv.convs[j].cbr._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-            model.down[i].conv.convs[j].cbr._modules['0'].bias.data.fill_(0.0)
+            ksz = model.down[i].conv.convs[j].cbrd._modules['0'].weight.size()
+            model.down[i].conv.conv.convs[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+            model.down[i].conv.convs[j].cbrd._modules['0'].bias.data.fill_(0.0)
     # center
     for j in range(2):
-        ksz = model.center.convs[j].cbr._modules['0'].weight.size()
-        model.center.convs[j].cbr._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-        model.center.convs[j].cbr._modules['0'].bias.data.fill_(0.0)
+        ksz = model.center.convs[j].cbrd._modules['0'].weight.size()
+        model.center.convs[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+        model.center.convs[j].cbrd._modules['0'].bias.data.fill_(0.0)
     # up
     for i in range(3):
         model.up[i].up.weight.data.fill_(1.0)
-        ksz = model.up[i].up_conv.convs[0].cbr._modules['0'].weight.size()
-        model.up[i].up_conv.convs[0].cbr._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-        model.up[i].up_conv.convs[0].cbr._modules['0'].bias.data.fill_(0.0)
+        ksz = model.up[i].up_conv.convs[0].cbrd._modules['0'].weight.size()
+        model.up[i].up_conv.convs[0].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+        model.up[i].up_conv.convs[0].cbrd._modules['0'].bias.data.fill_(0.0)
         for j in range(2):
-            ksz = model.up[i].conv.convs[j].cbr._modules['0'].weight.size()
-            model.up[i].conv.convs[j].cbr._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-            model.up[i].conv.convs[j].cbr._modules['0'].bias.data.fill_(0.0)
+            ksz = model.up[i].conv.convs[j].cbrd._modules['0'].weight.size()
+            model.up[i].conv.convs[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+            model.up[i].conv.convs[j].cbrd._modules['0'].bias.data.fill_(0.0)
     ksz = model.final.conv.weight.size()
-    model.final.convs[0].cbr.weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
-    model.final.convs[0].cbr.bias.data.fill_(0.0)
+    model.final.convs[0].cbrd.weight.data.copy_(torch.from_numpy(np.random.normal(0, weight_filler(ksz,opt[0],opt[1]), ksz)))
+    model.final.convs[0].cbrd.bias.data.fill_(0.0)
 
 def load_weights_pkl(model, weights):
     # todo: add BN param
@@ -260,35 +328,27 @@ def load_weights_pkl(model, weights):
     for i in range(3):
         for j in range(2):
             ww = weights['Convolution'+str(2*i+j+1)]
-            model.down[i].conv.convs[j].cbr._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
-            model.down[i].conv.convs[j].cbr._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
+            model.down[i].conv.convs[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
+            model.down[i].conv.convs[j].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
     # center
     for j in range(2):
         ww = weights['Convolution'+str(7+j)]
-        model.center.convs[j].cbr._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
-        model.center.convs[j].cbr._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
+        model.center.conv.convs[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
+        model.center.conv.convs[j].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
     # up
     for i in range(3):
         ww = weights['Deconvolution'+str(i+1)]
-        model.up[i].up.weight.data.copy_(torch.from_numpy(ww['w']))
-        ww = weights['Convolution'+str(9+i*3)]
-        model.up[i].up_conv.convs[0].cbr._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
-        model.up[i].up_conv.convs[0].cbr._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
+        if model.up[i].opt[0]==0:# upsample+conv
+            model.up[i].up._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
+            ww = weights['Convolution'+str(9+i*3)]
+            model.up[i].up._modules['1'].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
+            model.up[i].up._modules['1'].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
+        elif model.up[i].opt[0]==1:# deconv
+            model.up[i].up.weight.data.copy_(torch.from_numpy(ww['w']))
         for j in range(2):
             ww = weights['Convolution'+str(10+3*i+j)]
-            model.up[i].conv.convs[j].cbr._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
-            model.up[i].conv.convs[j].cbr._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
+            model.up[i].conv.convs[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
+            model.up[i].conv.convs[j].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
     ww = weights['Convolution18']
-    model.final.convs[0].cbr._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
-    model.final.convs[0].cbr._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
-
-def pad5DReflect(data,pad_size,opt=0):
-    if opt==0:
-        # method 1: transfer to cpu
-        # forward is correct, but backward is wrong
-        out = np.lib.pad(data.data.cpu().numpy(),pad_size,'reflect')
-        return torch.from_numpy(out)
-    elif opt==1:
-        # method 2: hack with 4D reflect
-        pass
-
+    model.final.conv.cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
+    model.final.conv.cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
