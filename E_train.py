@@ -38,7 +38,7 @@ def get_args():
                         help='pre-train snapshot path')
 
     # model option
-    parser.add_argument('-a','--opt-arch', type=str,  default='0,0;0;0,0;0',
+    parser.add_argument('-a','--opt-arch', type=str,  default='0-0@0@0-0-0@0',
                         help='model type')
     parser.add_argument('-f', '--num-filter', default='24,72,216,648',
                         help='number of filters per layer')
@@ -48,6 +48,8 @@ def get_args():
                         help='pad type')
     parser.add_argument('-bn', '--has-BN', type=int, default=0,
                         help='use BatchNorm')
+    parser.add_argument('-rs', '--relu-slope', type=float, default=0.005,
+                        help='relu type')
     parser.add_argument('-do', '--has-dropout', type=float, default=0,
                         help='use dropout')
     parser.add_argument('-it','--init', type=int,  default=-1,
@@ -70,8 +72,6 @@ def get_args():
                         help='beta for adam')
     parser.add_argument('-wd', type=float, default=5e-6,
                         help='weight decay')
-    parser.add_argument('-b','--batch-size', type=int,  default=16,
-                        help='batch size')
     parser.add_argument('--iter-total', type=int, default=1000,
                         help='total number of iteration')
     parser.add_argument('--iter-save', type=int, default=100,
@@ -82,6 +82,8 @@ def get_args():
                         help='number of gpu')
     parser.add_argument('-c','--num-cpu', type=int,  default=1,
                         help='number of cpu')
+    parser.add_argument('-b','--batch-size', type=int,  default=1,
+                        help='batch size')
     args = parser.parse_args()
     return args
 
@@ -141,9 +143,9 @@ def get_data(args):
 
 def get_model(args, model_io_size):
     num_filter = [int(x) for x in args.num_filter.split(',')]
-    opt_arch = [[int(x) for x in y.split(',')] for y in  args.opt_arch.split(';')]
+    opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
     model = unet3D(filters=num_filter,opt_arch = opt_arch,
-                   has_BN = args.has_BN==1, has_dropout = args.has_dropout,
+                   has_BN = args.has_BN==1, has_dropout = args.has_dropout, relu_slope = args.relu_slope,
                    pad_size = args.pad_size, pad_type= args.pad_type)
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
     model.cuda()
@@ -237,7 +239,7 @@ def main():
          
         # print log
         t3 = time.time()
-        logger.write("[Iter %d] loss=%0.2f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (iter_id,loss.data[0],optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
+        logger.write("[Iter %d] loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (iter_id,loss.data[0],optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
         if (iter_id+1) % args.iter_save == 0: 
             print ('saving: [%d/%d]') % (pre_epoch + iter_id, args.iter_save)
             save_checkpoint(model, sn+('iter_%d_%d_%s.pth' % (args.batch_size,pre_epoch+iter_id+1,str(args.lr))), optimizer, iter_id)
