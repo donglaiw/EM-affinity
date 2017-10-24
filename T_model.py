@@ -219,6 +219,7 @@ class unetUp(nn.Module):
         if opt[0]==0: # upsample+conv
             self.up = nn.Sequential(nn.ConvTranspose3d(in_num, in_num, cfg_up['pool_kernel'], cfg_up['pool_stride'], groups=in_num, bias=False),
                 unitConv3dRBD(in_num, outUp_num, 1, 1, 0, '', True))
+            self.up._modules['0'].weight.data.fill_(1.0)
             # not supported yet: anisotropic upsample
             # self.up = nn.Sequential(nn.Upsample(scale_factor=cfg_up.pool_kernel, mode='nearest'),
             #    unitConv3dRBD(in_num, outUp_num, 1, 1, 0, '', True))
