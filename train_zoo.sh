@@ -18,6 +18,7 @@ gpu_id=${8}
 
 loss_opt=${8}
 loss_weight_opt=${9}
+test_file=${10}
 
 gpu_num=$(( $( countGPU ${gpu_id} ) +1 ))
 batch_size=$((batch_per_gpu * gpu_num))
@@ -36,16 +37,17 @@ case ${model_opt} in
 
             ;;
         2) # pred test volume
-            # ./train_zoo.sh 1 2 /n/home02/ptillet/Development/malis-pytorch/result/malis/ iter_10_17000_0.0005.pth ecs-gt-4x6x6-150k-pred.h5 16 2 0,1
+            # ./train_zoo.sh 1 2 /n/home02/ptillet/Development/malis-pytorch/result/malis/ iter_10_17000_0.0005.pth ecs-gt-4x6x6-150k-pred.h5 16 2 0,1 -1 ecs-gt-4x6x6
             # pred train volume
-            # ./train_zoo.sh 1 2 /n/home02/ptillet/Development/malis-pytorch/result/malis/ iter_10_17000_0.0005.pth out_train.h5 16 4 0,1,2,3,4 -i /n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-3x6x6/
-            CUDA_VISIBLE_DEVICES=${gpu_id} python E_test.py -s ${out_dir}/${snapshot} -b ${batch_size} -g ${gpu_num} -c ${cpu_num} -o ${out_dir}/${out_name} -bn 1
+            # ./train_zoo.sh 1 2 /n/home02/ptillet/Development/malis-pytorch/result/malis/ iter_10_17000_0.0005.pth out_train.h5 16 4 0,1,2,3,4 -1 ecs-gt-3x6x6
+            CUDA_VISIBLE_DEVICES=${gpu_id} python E_test.py -s ${out_dir}/${snapshot} -b ${batch_size} -g ${gpu_num} -c ${cpu_num} -o ${out_dir}/${out_name} -bn 1 -i /n/coxfs01/donglai/malis_trans/data/ecs-3d/${out_file}
             ;;
         3) # eval pred
-            # ./train_zoo.sh 1 3 /n/home02/ptillet/Development/malis-pytorch/result/malis/ -1 out.h5 10 10 1 0.5
+            # train: ./train_zoo.sh 1 3 /n/home02/ptillet/Development/malis-pytorch/result/malis/ -1 out.h5 10 10 1 0.5 ecs-gt-3x6x6
+            # test: ./train_zoo.sh 1 3 /n/home02/ptillet/Development/malis-pytorch/result/malis/ -1 out.h5 10 10 1 0.5 ecs-gt-4x6x6
             # malis: 1 0.5
             # weighted-L2: 0 2
-            python E_test.py -t 1 -o ${out_dir}/${out_name} -b ${batch_size} -c ${cpu_num} -l ${loss_opt} -lw ${loss_weight_opt}
+            python E_test.py -t 1 -o ${out_dir}/${out_name} -b ${batch_size} -c ${cpu_num} -l ${loss_opt} -lw ${loss_weight_opt} -i /n/coxfs01/donglai/malis_trans/data/ecs-3d/${out_file}
             ;;
     esac
 ;;
