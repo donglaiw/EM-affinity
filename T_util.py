@@ -48,6 +48,16 @@ class labelWeight():
             self.weight[i] = np.add((data[i] >= self.thres) * w_pos, (data[i] < self.thres) * w_neg)
         return self.weight/self.num_elem
 
+def weightedMSE_np(input, target, weight=None, normalize_weight=False):
+    # normalize by batchsize
+    if weight is None:
+        return np.sum((input - target) ** 2)/input.shape[0]
+    else:
+        if not normalize_weight:
+            return np.sum(weight * (input - target) ** 2)/input.shape[0]
+        else:
+            return np.mean(weight * (input - target) ** 2)
+
 def weightedMSE(input, target, weight=None, normalize_weight=False):
     # normalize by batchsize
     if weight is None:
@@ -56,7 +66,7 @@ def weightedMSE(input, target, weight=None, normalize_weight=False):
         if not normalize_weight:
             return torch.sum(weight * (input - target) ** 2)/input.size(0)
         else:
-            return torch.sum(weight * (input - target) ** 2)/torch.numel(input)
+            return torch.mean(weight * (input - target) ** 2)
 
 # ---------------------
 # 2. learning/model utility
