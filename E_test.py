@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 from T_model import unet3D
-from T_util import load_checkpoint,weightedMSE,malisWeight,labelWeight
+from T_util import load_checkpoint,weightedMSE_np,malisWeight,labelWeight
 from T_data import VolumeDatasetTest, np_collate
 import malis_core
 
@@ -28,6 +28,11 @@ def get_args():
                         help='image data name')
     parser.add_argument('-o','--output', default='result/my-pred.h5',
                         help='output path')
+    parser.add_argument('-ln','--label-name',  default='seg-groundtruth2-malis_crop.h5',
+                        help='segmentation label')
+    parser.add_argument('-lnd','--label-dataset-name',  default='main',
+                        help='dataset name in label')
+
     # model option
     parser.add_argument('-a','--opt-arch', type=str,  default='0-0@0@0-0-0@0',
                         help='model type')
@@ -60,11 +65,13 @@ def get_data(args):
     elif args.pad_size==1:                                                                          
         model_io_size = np.array(((18,224,224), (18,224,224)));                                     
         aff_suf='2';
-    
-    if args.data_name[-3:] == '.h5':
-        test_data =  np.array(h5py.File(args.input+args.data_name,'r')['main'],dtype=np.float32)[None,:]/(2.**8)
-    elif args.data_name[-4:] == '.pkl':
-        test_data =  np.array(pickle.load(args.input+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
+
+    if args.task_opt==0:
+        test_data =  np.array(h5py.File(args.input+args.data_name,'rb')['main'],dtype=np.float32)[None,:]/(2.**8)
+        out_data_size = model_io_size[0]
+    elif args.task_opt==1: # load test prediction 
+        test_data =  np.array(h5py.File(args.output,'r')['main'],dtype=np.float32)
+        out_data_size = model_io_size[1]
     
     nhood = None
     test_label = None
@@ -73,7 +80,7 @@ def get_data(args):
         if args.loss_opt==1: # evaluate malis: need segmentation
             nhood = malis_core.mknhood3d()
     test_dataset = VolumeDatasetTest(test_data, test_label, nhood, data_size=test_data.shape[1:],sample_stride=model_io_size[1],
-                    out_data_size=model_io_size[0],out_label_size=model_io_size[1])
+                    out_data_size=out_data_size,out_label_size=model_io_size[1])
 
     test_loader =  torch.utils.data.DataLoader(
             test_dataset, batch_size= args.batch_size, shuffle=False, collate_fn = np_collate,
@@ -104,9 +111,6 @@ def main():
     if not os.path.exists(args.output[:args.output.rfind('/')]):
         os.makedirs(args.output[:args.output.rfind('/')])
 
-    if os.path.exists(args.output):
-        print "already done:",args.output
-        return
     print '1. setup data'
     test_loader, test_var, output_size, model_io_size = get_data(args)
     

@@ -8,14 +8,16 @@ countGPU(){
 # example script to train models
 
 model_opt=${1}
-loss_opt=${2}
+step=${2}
 out_dir=${3}
 snapshot=${4}
 out_name=${5}
 cpu_num=${6}
 batch_per_gpu=${7}
-
 gpu_id=${8}
+loss_opt=${7}
+loss_weight_opt=${8}
+
 gpu_num=$(( $( countGPU ${gpu_id} ) +1 ))
 batch_size=$((batch_per_gpu * gpu_num))
 
@@ -23,7 +25,7 @@ case ${model_opt} in
 # 2. unet3d-vgg-pad model
 
 1) # 1. reference unet3d-vgg model
-    case ${loss_opt} in
+    case ${step} in
         0) # weighted l2 loss
             CUDA_VISIBLE_DEVICES=${gpu_id} python E_train.py -dc 2 -dr 0 -l 0 -lw 2 --iter-total 2000 --iter-save 500 -lr 0.0005 -o ${4} -betas 0.99,0.999 -lr_decay inv,0.001,0.75 -bn 1 -g ${gpu_num} -b ${batch_size} -c ${cpu_num}
             ;;
@@ -37,7 +39,10 @@ case ${model_opt} in
             CUDA_VISIBLE_DEVICES=${gpu_id} python E_test.py -s ${out_dir}/${snapshot} -b ${batch_size} -g ${gpu_num} -c ${cpu_num} -o ${out_dir}/${out_name} -bn 1
             ;;
         3) # eval pred
-            python E_test.py -t 1 -o ${4}/${5} -b 20 -c 16 -l 1 -lw 0.5
+            # ./train_zoo.sh 1 3 /n/home02/ptillet/Development/malis-pytorch/result/malis/ -1 out.h5 100 1 0.5
+            # malis: 1 0.5
+            # weighted-L2: 0 2
+            python E_test.py -t 1 -o ${out_dir}/${out_name} -b ${batch_size} -c ${cpu_num} -l ${loss_opt} -lw ${loss_weight_opt}
             ;;
     esac
 ;;
