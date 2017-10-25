@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 from T_model import unet3D
-from T_util import load_checkpoint
+from T_util import load_checkpoint,weightedMSE,malisWeight,labelWeight
 from T_data import VolumeDatasetTest, np_collate
 import malis_core
 
@@ -87,7 +87,8 @@ def get_data(args):
 def get_model(args):
     # create model
     num_filter = [int(x) for x in args.num_filter.split(',')]
-    opt_arch = [[int(x) for x in y.split(',')] for y in  args.opt_arch.split(';')]
+
+    opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
     model = unet3D(filters=num_filter,opt_arch = opt_arch,
                    has_BN = args.has_BN==1, has_dropout = args.has_dropout,
                    pad_size = args.pad_size, pad_type= args.pad_type)
@@ -109,9 +110,9 @@ def main():
     print '1. setup data'
     test_loader, test_var, output_size, model_io_size = get_data(args)
     
-    if not os.path.exist(args.snapshot):
-        if not os.path.exist(args.output):
-            raise args.snapshot+" doesn't exist for prediction"
+    if not os.path.exists(args.output):
+        if not os.path.exists(args.snapshot):
+            raise IOException(args.snapshot+" doesn't exist for prediction")
         else:
             print '-- start prediction --'
             print '2. load model'
@@ -148,7 +149,7 @@ def main():
     else:
         print '-- start evaluate prediction loss'
         print '2. load loss'
-        conn_dims = [bsz, 3]+list(model_io_size[1])                                                     
+        conn_dims = [args.batch_size, 3]+list(model_io_size[1])                                                     
         if args.loss_opt==0: # l2 
             loss_w = labelWeight(conn_dims, args.loss_weight_opt)
         elif args.loss_opt==1: # malis
