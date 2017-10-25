@@ -145,26 +145,26 @@ def main():
             outhdf5 = h5py.File(args.output, 'w')
             outdset = outhdf5.create_dataset('main', pred.shape, np.float32, data=pred)
             outhdf5.close()
-        else:
-            print '-- start evaluate prediction loss'
-            print '2. load loss'
-            conn_dims = [bsz, 3]+list(model_io_size[1])                                                     
-            if args.loss_opt==0: # l2 
-                loss_w = labelWeight(conn_dims, args.loss_weight_opt)
-            elif args.loss_opt==1: # malis
-                loss_w = malisWeight(conn_dims, args.loss_weight_opt) 
-            print '3. start evaluation'
-            loss=0;                                                                                           
-            num_batch = test_loader.__len__()                                                               
-            for batch_id, data in enumerate(test_loader):
-                if args.loss_opt == 0: # L2
-                    ww = loss_w.getWeight(data[1])
-                elif args.loss_opt == 1: # malis
-                    ww = loss_w.getWeight(data[0], data[1], data[2])
-                loss += weightedMSE_np(data[0], data[1], ww)
-                print '%d/%d: avg loss = %.5f' % (batch_id,num_batch,loss/(1+batch_id))
-                if batch_id == num_batch-2: # pass the last one                                             
-                    break 
+    else:
+        print '-- start evaluate prediction loss'
+        print '2. load loss'
+        conn_dims = [bsz, 3]+list(model_io_size[1])                                                     
+        if args.loss_opt==0: # l2 
+            loss_w = labelWeight(conn_dims, args.loss_weight_opt)
+        elif args.loss_opt==1: # malis
+            loss_w = malisWeight(conn_dims, args.loss_weight_opt) 
+        print '3. start evaluation'
+        loss=0;                                                                                           
+        num_batch = test_loader.__len__()                                                               
+        for batch_id, data in enumerate(test_loader):
+            if args.loss_opt == 0: # L2
+                ww = loss_w.getWeight(data[1])
+            elif args.loss_opt == 1: # malis
+                ww = loss_w.getWeight(data[0], data[1], data[2])
+            loss += weightedMSE_np(data[0], data[1], ww)
+            print '%d/%d: avg loss = %.5f' % (batch_id,num_batch,loss/(1+batch_id))
+            if batch_id == num_batch-2: # pass the last one                                             
+                break 
 
 if __name__ == "__main__":
     main()
