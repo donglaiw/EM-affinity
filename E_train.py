@@ -1,23 +1,15 @@
 import numpy as np
-import pickle
-import time
-import os,sys
-import h5py
+import pickle, h5py, time, os, sys, argparse
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.utils.data
 
-import malis_core
-from T_model import unet3D,weightedMSE,malisWeight,labelWeight
-from T_model import save_checkpoint,load_checkpoint,decay_lr 
-        
+from T_model import unet3D
+from T_util import save_checkpoint,load_checkpoint,decay_lr,weightedMSE,malisWeight,labelWeight
 from T_data import VolumeDatasetTrain, np_collate
-import argparse
-
-# dc=0;dr=0;CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 python E_train.py -m 1 -dc ${dc} -dr ${dr} -l 1 -b 16 --iter-total 2000 --iter-save 1000 -lr 0.001 -g 6 -c 16 -o result/16_8_1e-3_bn_dc${dc}_dr${dr}/
+import malis_core
 
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')

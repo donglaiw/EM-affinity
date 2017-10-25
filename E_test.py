@@ -1,16 +1,14 @@
 import numpy as np
-import h5py
-import os,sys
-import time
+import os, sys, time, argparse, h5py
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-import malis_core
-from T_model import unet3D,load_checkpoint
-from T_data import VolumeDatasetTest, np_collate
-import argparse
 
-# ii=7874;CUDA_VISIBLE_DEVICES=0,1,2,3 python E_test.py -m 1 -s /n/coxfs01/donglai/malis_trans/pytorch_train/w0921/16_8_1e-3_bnL2/iter_16_${ii}_0.001.pth -dn im_uint8.h5 -b 16 -g 4 -c 16 -o result/16_8_1e-3_bnL2/ecs-gt-4x6x6-${ii}-pred.h5
+from T_model import unet3D
+from T_util import load_checkpoint
+from T_data import VolumeDatasetTest, np_collate
+import malis_core
 
 def get_args():
     parser = argparse.ArgumentParser(description='Testing Model')
