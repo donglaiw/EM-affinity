@@ -170,8 +170,9 @@ class unetUp(nn.Module):
             # self.up = nn.Sequential(nn.Upsample(scale_factor=cfg_up.pool_kernel, mode='nearest'),
             #    unitConv3dRBD(in_num, outUp_num, 1, 1, 0, '', True))
         elif opt[0]==1: # group deconv, remember to initialize with (1,0)
-            self.up = nn.ConvTranspose3d(in_num, in_num, cfg_up['pool_kernel'], cfg_up['pool_stride'], groups=in_num, bias=True)
-            outUp_num = in_num
+            self.up = nn.Sequential(nn.ConvTranspose3d(in_num, in_num, cfg_up['pool_kernel'], cfg_up['pool_stride'], groups=in_num, bias=True),
+                unitConv3dRBD(in_num, outUp_num, 1, 1, 0, '', True))
+            self.up._modules['0'].weight.data.fill_(1.0)
         elif opt[0]==2: # residual deconv
             self.up = blockResNet(unitResBasic, 1, in_num, in_num, stride_size=cfg_down['pool_stride'], do_sample=-1, cfg=cfg_conv)
             outUp_num = in_num
