@@ -165,7 +165,7 @@ def get_model(args, model_io_size):
 def get_optimizer(args, model, pre_epoch=0):
     betas = [float(x) for x in args.betas.split(',')]
     frozen_id = []
-    if model.up[0].opt[0]==0: # hacked upsampling layer
+    if (args.num_gpu==1 and model.up[0].opt[0]==0) or (args.num_gpu>1 and model.module.up[0].opt[0]==0): # hacked upsampling layer
         if args.num_gpu==1:
             for i in range(len(model.up)):
                 frozen_id +=  list(map(id,model.up[i].up._modules['0'].parameters()))
