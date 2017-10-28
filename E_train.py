@@ -8,14 +8,16 @@ import torch.utils.data
 
 from T_model import unet3D
 from T_util import save_checkpoint,load_checkpoint,decay_lr,weightedMSE,malisWeight,labelWeight
-from T_data import VolumeDatasetTrain, np_collate
+from T_data import VolumeDatasetTrain, VolumeDatasetTest, np_collate
 import malis_core
 
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
     # I/O
     parser.add_argument('-i','--input',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-3x6x6/',
-                        help='input folder')
+                        help='input folder (train)')
+    parser.add_argument('-t','--test',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/',
+                        help='input folder (test)')
     parser.add_argument('-dn','--data-name',  default='im_uint8.h5',
                         help='image data')
     parser.add_argument('-ln','--label-name',  default='seg-groundtruth2-malis.h5',
@@ -133,6 +135,33 @@ def get_data(args):
 
     return train_loader, train_vars,model_io_size
 
+
+def get_test_data(args):
+    # Handle padding
+    if args.pad_size==0:
+        model_io_size = np.array(((31,204,204), (3,116,116)));
+        aff_suf='';
+    elif args.pad_size==1:
+        model_io_size = np.array(((18,224,224), (18,224,224)));
+        aff_suf='2';
+
+    # Features
+    test_data =  np.array(h5py.File(args.test + args.data_name,'r')['main'],dtype=np.float32)[None,:]/(2.**8)
+    out_data_size = model_io_size[0]
+
+    # Labels
+    test_label = np.array(h5py.File(args.test + args.label_name[:-3]+'_crop_aff'+aff_suf+'.h5','r')['main'])
+    nhood = malis_core.mknhood3d() if args.loss_opt==1 else None
+
+    # Loaders
+    test_dataset = VolumeDatasetTest(test_data, test_label, nhood, data_size=test_data.shape[1:],sample_stride=model_io_size[1],
+                out_data_size=out_data_size,out_label_size=model_io_size[1])
+    test_loader =  torch.utils.data.DataLoader(
+            test_dataset, batch_size= args.batch_size, shuffle=False, collate_fn = np_collate,
+            num_workers= args.num_cpu, pin_memory=True)
+
+    return test_loader
+
 def get_model(args, model_io_size):
     num_filter = [int(x) for x in args.num_filter.split(',')]
     opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
@@ -185,6 +214,17 @@ def get_optimizer(args, model, pre_epoch=0):
         decay_lr(optimizer, args.lr, pre_epoch-1, lr_decay[0], lr_decay[1], lr_decay[2])
     return optimizer, lr_decay
 
+def forward(model, data, vars, loss_w, args):
+    y_pred = model(vars[0])
+    vars[1].data.copy_(torch.from_numpy(data[1]))
+    # Weighted (L2)
+    if args.loss_opt == 0 and args.loss_weight_opt != 0:
+        vars[2].data.copy_(torch.from_numpy(loss_w.getWeight(data[1])))
+    # Weighted (MALIS)
+    elif args.loss_opt == 1 and args.loss_weight_opt != 0:
+        vars[2].data.copy_(torch.from_numpy(loss_w.getWeight(y_pred.data.cpu().numpy(), data[1], data[2])))
+    return weightedMSE(y_pred, vars[1], vars[2])
+
 def main():
     args = get_args()
     sn = args.output+'/'
@@ -192,7 +232,8 @@ def main():
         os.makedirs(sn)
 
     print '1. setup data'
-    train_loader, train_vars,model_io_size = get_data(args)
+    train_loader, train_vars, model_io_size = get_data(args)
+    test_loader = get_test_data(args)
 
     print '2. setup model'
     model, loss_w, pre_epoch, logger = get_model(args, model_io_size)
@@ -208,34 +249,34 @@ def main():
 
     # Normalize learning rate
     args.lr = args.lr * args.batch_size / 2
-    for iter_id, data in enumerate(train_loader):
+    train_iter, test_iter = iter(train_loader), iter(test_loader)
+    for iter_id, data in enumerate(train_iter):
         optimizer.zero_grad()
         volume_id = (iter_id + 1) * args.batch_size
         pre_volume = pre_epoch * args.batch_size
 
         # copy data
         t1 = time.time()
-        train_vars[0].data.copy_(torch.from_numpy(data[0]))
 
-        # forward-backward
+        # Forward
         t2 = time.time()
-        y_pred = model(train_vars[0])
-        train_vars[1].data.copy_(torch.from_numpy(data[1]))
-        if args.loss_opt == 0 and args.loss_weight_opt == 0: # regular L2
-                loss = weigthedMSE(y_pred, train_vars[1])
-        else: # weighted
-            if args.loss_opt == 0: # L2
-                train_vars[2].data.copy_(torch.from_numpy(loss_w.getWeight(data[1])))
-            elif args.loss_opt == 1: # malis
-                train_vars[2].data.copy_(torch.from_numpy(loss_w.getWeight(y_pred.data.cpu().numpy(), data[1], data[2])))
-            loss = weightedMSE(y_pred, train_vars[1], train_vars[2])
+        # Validation error
+        #if iter_id % 10 == 0:
+        #    test_data = next(test_iter)
+        #    train_vars[0].data.copy_(torch.from_numpy(test_data[0]))
+        #    test_loss = forward(model, test_data, train_vars, loss_w, args)
+        # Training error
+        train_vars[0].data.copy_(torch.from_numpy(data[0]))
+        train_loss = forward(model, data, train_vars, loss_w, args)
+
+        # Backward
         if args.lr > 0:
-            loss.backward()
+            train_loss.backward()
             optimizer.step()
 
         # Print log
         t3 = time.time()
-        logger.write("[Volume %d] loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (volume_id,loss.data[0],optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
+        logger.write("[Volume %d] train_loss=%0.3f test_loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (volume_id,train_loss.data[0],0.25,optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
 
         # Save progress
         if volume_id % args.volume_save == 0 or volume_id >= args.volume_total:
