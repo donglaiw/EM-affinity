@@ -58,15 +58,15 @@ def get_args():
     # optimization option
     parser.add_argument('-lr', type=float, default=0.0001,
                         help='learning rate')
-    parser.add_argument('-lr_decay', default='inv,0.001,0.75',
+    parser.add_argument('-lr_decay', default='inv,0.0001,0.75',
                         help='learning rate decay')
-    parser.add_argument('-betas', default='0.9,0.99',
+    parser.add_argument('-betas', default='0.99,0.999',
                         help='beta for adam')
     parser.add_argument('-wd', type=float, default=5e-6,
                         help='weight decay')
-    parser.add_argument('--iter-total', type=int, default=1000,
+    parser.add_argument('--volume-total', type=int, default=1000,
                         help='total number of iteration')
-    parser.add_argument('--iter-save', type=int, default=100,
+    parser.add_argument('--volume-save', type=int, default=100,
                         help='number of iteration to save')
     parser.add_argument('-e', '--pre-epoch', type=int, default=0,
                         help='previous number of epoch')
@@ -113,7 +113,7 @@ def get_data(args):
     color_shift = [(-0.2,0.2), (-0.1,0.1), None][args.data_color_opt]
     color_clip = [(0.05,0.95), (0.05,0.95), None][args.data_color_opt]
     rot = [[(1,1,1),True],[(0,0,0),False]][args.data_rotation_opt]
-    train_dataset = VolumeDatasetTrain(train_data, train_label, nhood, data_size=train_data.shape[1:], 
+    train_dataset = VolumeDatasetTrain(train_data, train_label, nhood, data_size=train_data.shape[1:],
                            reflect=rot[0], swapxy=rot[1],
                            color_scale=color_scale,color_shift=color_shift,clip=color_clip,
                            out_data_size=model_io_size[0],out_label_size=model_io_size[1])
@@ -139,11 +139,11 @@ def get_model(args, model_io_size):
     model = unet3D(filters=num_filter,opt_arch = opt_arch,
                    has_BN = args.has_BN==1, has_dropout = args.has_dropout, relu_slope = args.relu_slope,
                    pad_size = args.pad_size, pad_type= args.pad_type)
-    if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
+    if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu))
     model.cuda()
     conn_dims = [args.batch_size,3]+list(model_io_size[1])
     if args.loss_opt == 0: # L2 training
-        loss_w = labelWeight(conn_dims, args.loss_weight_opt) 
+        loss_w = labelWeight(conn_dims, args.loss_weight_opt)
         save_suf = '_L2_'+str(args.lr)
     elif args.loss_opt == 1: # malis training
         loss_w = malisWeight(conn_dims, args.loss_weight_opt)
@@ -165,13 +165,12 @@ def get_model(args, model_io_size):
 def get_optimizer(args, model, pre_epoch=0):
     betas = [float(x) for x in args.betas.split(',')]
     frozen_id = []
-    if (args.num_gpu==1 and model.up[0].opt[0]==0) or (args.num_gpu>1 and model.module.up[0].opt[0]==0): # hacked upsampling layer
-        if args.num_gpu==1:
-            for i in range(len(model.up)):
-                frozen_id +=  list(map(id,model.up[i].up._modules['0'].parameters()))
-        else:
-            for i in range(len(model.module.up)):
-                frozen_id +=  list(map(id,model.module.up[i].up._modules['0'].parameters()))
+    if args.num_gpu==1 and model.up[0].opt[0]==0: # hacked upsampling layer
+        for i in range(len(model.up)):
+            frozen_id +=  list(map(id,model.up[i].up._modules['0'].parameters()))
+    elif model.module.up[0].opt[0]==0: # hacked upsampling layer
+        for i in range(len(model.module.up)):
+            frozen_id +=  list(map(id,model.module.up[i].up._modules['0'].parameters()))
     frozen_params = filter(lambda p: id(p) in frozen_id, model.parameters())
     rest_params = filter(lambda p: id(p) not in frozen_id, model.parameters())
     optimizer = torch.optim.Adam([
@@ -207,8 +206,12 @@ def main():
     else:
         model.train()
 
+    # Normalize learning rate
+    args.lr = args.lr * args.batch_size / 2
     for iter_id, data in enumerate(train_loader):
         optimizer.zero_grad()
+        volume_id = (iter_id + 1) * args.batch_size
+        pre_volume = pre_epoch * args.batch_size
 
         # copy data
         t1 = time.time()
@@ -229,20 +232,20 @@ def main():
         if args.lr > 0:
             loss.backward()
             optimizer.step()
-         
-        # print log
-        t3 = time.time()
-        logger.write("[Iter %d] loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (iter_id,loss.data[0],optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
-        if (iter_id+1) % args.iter_save == 0: 
-            print ('saving: [%d/%d]') % (pre_epoch + iter_id, args.iter_save)
-            save_checkpoint(model, sn+('iter_%d_%d_%s.pth' % (args.batch_size,pre_epoch+iter_id+1,str(args.lr))), optimizer, iter_id)
-        iter_id+=1
-        #print optimizer.param_groups[0]['lr'],model.up[0].up._modules['0'].weight.data.mean()
-        #pickle.dump({'o':data[3], 'd':data[0], 'l':data[1], 'w':data[2]},open('result/sample/train_'+str(iter_id)+'.pkl','wb'))
 
-        if iter_id == args.iter_total:
+        # Print log
+        t3 = time.time()
+        logger.write("[Volume %d] loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (volume_id,loss.data[0],optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
+
+        # Save progress
+        if volume_id % args.volume_save == 0 or volume_id >= args.volume_total:
+            save_checkpoint(model, sn+('volume_%d.pth' % (pre_volume + volume_id)), optimizer, volume_id)
+
+        # Terminate
+        if volume_id >= args.volume_total:
             break
-        # lr update
+
+        # LR update
         if args.lr > 0:
             decay_lr(optimizer, args.lr, pre_epoch+iter_id, lr_decay[0], lr_decay[1], lr_decay[2])
 
