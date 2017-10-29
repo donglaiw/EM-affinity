@@ -1,5 +1,5 @@
 import numpy as np
-import pickle, h5py, time, os, sys, argparse
+import pickle, h5py, time, os, sys, argparse, itertools
 
 import torch
 import torch.nn as nn
@@ -154,10 +154,10 @@ def get_test_data(args):
     nhood = malis_core.mknhood3d() if args.loss_opt==1 else None
 
     # Loaders
-    test_dataset = VolumeDatasetTest(test_data, test_label, nhood, data_size=test_data.shape[1:],sample_stride=model_io_size[1],
+    test_dataset = VolumeDatasetTest(test_data, test_label, nhood, data_size=test_data.shape[1:],
                 out_data_size=out_data_size,out_label_size=model_io_size[1])
     test_loader =  torch.utils.data.DataLoader(
-            test_dataset, batch_size= args.batch_size, shuffle=False, collate_fn = np_collate,
+            test_dataset, batch_size= args.batch_size, shuffle=True, collate_fn = np_collate,
             num_workers= args.num_cpu, pin_memory=True)
 
     return test_loader
@@ -249,7 +249,7 @@ def main():
 
     # Normalize learning rate
     args.lr = args.lr * args.batch_size / 2
-    train_iter, test_iter = iter(train_loader), iter(test_loader)
+    train_iter, test_iter = itertools.cycle(iter(train_loader)), itertools.cycle(iter(test_loader))
     for iter_id, data in enumerate(train_iter):
         optimizer.zero_grad()
         volume_id = (iter_id + 1) * args.batch_size
@@ -261,10 +261,10 @@ def main():
         # Forward
         t2 = time.time()
         # Validation error
-        #if iter_id % 10 == 0:
+        #if iter_id % 5 == 0:
         #    test_data = next(test_iter)
         #    train_vars[0].data.copy_(torch.from_numpy(test_data[0]))
-        #    test_loss = forward(model, test_data, train_vars, loss_w, args)
+        #    test_loss = forward(model, test_data, train_vars, loss_w, args).data[0]
         # Training error
         train_vars[0].data.copy_(torch.from_numpy(data[0]))
         train_loss = forward(model, data, train_vars, loss_w, args)
