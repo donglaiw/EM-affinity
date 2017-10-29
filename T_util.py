@@ -14,13 +14,12 @@ class malisWeight():
         else:
             self.nhood_data = malis_core.mknhood3d(1,1.8).astype(np.uint64).flatten()
         self.nhood_dims = np.array((3,3),dtype=np.uint64)
-        self.num_vol = conn_dims[0]
         self.conn_dims = np.array(conn_dims[1:]).astype(np.uint64) # dim=4
         self.pre_ve, self.pre_prodDims, self.pre_nHood = malis_core.malis_init(self.conn_dims, self.nhood_data, self.nhood_dims)
         self.weight = np.zeros(conn_dims,dtype=np.float32)#pre-allocate
 
     def getWeight(self, x_cpu, aff_cpu, seg_cpu):
-        for i in range(self.num_vol):
+        for i in range(x_cpu.shape[0]):
             self.weight[i] = malis_core.malis_loss_weights_both(seg_cpu[i].flatten(), self.conn_dims, self.nhood_data, self.nhood_dims, self.pre_ve, self.pre_prodDims, self.pre_nHood, x_cpu[i].flatten(), aff_cpu[i].flatten(), self.opt_weight).reshape(self.conn_dims)
         return self.weight
 
@@ -32,14 +31,13 @@ class labelWeight():
         self.clip_low=clip_low
         self.clip_high=clip_high
         self.thres = thres
-        self.num_vol = conn_dims[0]
         self.num_elem = np.prod(conn_dims[1:]).astype(float)
         self.weight = np.zeros(conn_dims,dtype=np.float32) #pre-allocate
 
     def getWeight(self, data):
         w_pos = self.opt_weight
         w_neg = 1.0-self.opt_weight
-        for i in range(self.num_vol):
+        for i in range(data.shape[0]):
             if self.opt_weight==2:
                 frac_pos = np.clip(data[i].mean(), self.clip_low, self.clip_high) #for binary labels
                 # can't be all zero
@@ -53,9 +51,9 @@ def weightedMSE_np(input, target, weight=None, normalize_weight=False):
     if weight is None:
         return np.sum((input - target) ** 2)/input.shape[0]
     else:
-        if not normalize_weight:
+        if not normalize_weight: # malis loss: weight already normalized
             return np.sum(weight * (input - target) ** 2)/input.shape[0]
-        else:
+        else: # standard avg error
             return np.mean(weight * (input - target) ** 2)
 
 def weightedMSE(input, target, weight=None, normalize_weight=False):

@@ -14,7 +14,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Testing Model')
 
     parser.add_argument('-t','--task-opt', type=int,  default=0,
-                        help='task: 0=prediction, 1=evaluation')
+                        help='task: 0=prediction, 1=evaluation, 2=evaluation-heatmap')
     parser.add_argument('-l','--loss-opt', type=int, default=0,
                         help='loss type') 
     parser.add_argument('-lw','--loss-weight-opt', type=float, default=2.0,                         
@@ -69,13 +69,13 @@ def get_data(args):
     if args.task_opt==0:
         test_data =  np.array(h5py.File(args.input+args.data_name,'rb')['main'],dtype=np.float32)[None,:]/(2.**8)
         out_data_size = model_io_size[0]
-    elif args.task_opt==1: # load test prediction 
+    elif args.task_opt in [1,2]: # load test prediction 
         test_data =  np.array(h5py.File(args.output,'r')['main'],dtype=np.float32)
         out_data_size = model_io_size[1]
     
     nhood = None
     test_label = None
-    if args.task_opt == 1: # do evaluation
+    if args.task_opt in [1,2]: # do evaluation
         test_label = np.array(h5py.File(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5','r')['main'])
         if args.loss_opt==1: # evaluate malis: need segmentation
             nhood = malis_core.mknhood3d()
@@ -89,7 +89,7 @@ def get_data(args):
     # pre-allocate torch cuda tensor
     test_var = Variable(torch.zeros(args.batch_size, 1, 31, 204, 204).cuda(), requires_grad=False)
     output_size = [3]+list(test_data.shape[1:]-(model_io_size[0]-model_io_size[1]))
-    return test_loader, test_var, output_size, model_io_size
+    return test_loader, test_var, output_size, model_io_size, test_dataset.sample_size
 
 def get_model(args):
     # create model
@@ -112,7 +112,7 @@ def main():
         os.makedirs(args.output[:args.output.rfind('/')])
 
     print '1. setup data'
-    test_loader, test_var, output_size, model_io_size = get_data(args)
+    test_loader, test_var, output_size, model_io_size, sample_size = get_data(args)
     
     if not os.path.exists(args.output):
         if not os.path.exists(args.snapshot):
@@ -159,17 +159,30 @@ def main():
         elif args.loss_opt==1: # malis
             loss_w = malisWeight(conn_dims, args.loss_weight_opt) 
         print '3. start evaluation'
-        loss=0;                                                                                           
-        num_batch = test_loader.__len__()                                                               
-        for batch_id, data in enumerate(test_loader):
-            if args.loss_opt == 0: # L2
-                ww = loss_w.getWeight(data[1])
-            elif args.loss_opt == 1: # malis
-                ww = loss_w.getWeight(data[0], data[1], data[2])
-            loss += weightedMSE_np(data[0], data[1], ww)
-            print '%d/%d: avg loss = %.5f' % (batch_id,num_batch,loss/(1+batch_id))
-            if batch_id == num_batch-2: # pass the last one                                             
-                break 
+        loss=0;
+        num_batch = test_loader.__len__()
+        if args.task_opt==1: # avg test error
+            for batch_id, data in enumerate(test_loader):
+                if args.loss_opt == 0: # L2
+                    ww = loss_w.getWeight(data[1])
+                elif args.loss_opt == 1: # malis
+                    ww = loss_w.getWeight(data[0], data[1], data[2])
+                loss += weightedMSE_np(data[0], data[1], ww)
+                print '%d/%d: avg loss = %.5f' % (batch_id,num_batch,loss/(1+batch_id))
+                if batch_id == num_batch-2: # pass the last one (not enough batch)
+                    break 
+        elif args.task_opt==2: # heatmap test error
+            pred = np.zeros(sample_size, dtype=np.float32)
+            for batch_id, data in enumerate(test_loader):
+                if args.loss_opt == 0: # L2
+                    ww = loss_w.getWeight(data[1])
+                elif args.loss_opt == 1: # malis
+                    ww = loss_w.getWeight(data[0], data[1], data[2])
+                for j in range(data[0].shape[0]):
+                    pp2 = [int(np.ceil(float(data[3][j][x])/model_io_size[1][x])) for x in range(3)]
+                    pred[pp2[0], pp2[1], pp2[2]] = weightedMSE_np(data[0][j], data[1][j], ww[j])
+            import pickle
+            pickle.dump(pred,open(args.output.replace('.h5','_err.pkl'), 'wb'))
 
 if __name__ == "__main__":
     main()
