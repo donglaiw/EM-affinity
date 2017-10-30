@@ -261,11 +261,13 @@ def main():
         # Forward
         t2 = time.time()
         # Validation error
-        #if iter_id % 5 == 0:
-        #    test_data = next(test_iter)
-        #    train_vars[0].data.copy_(torch.from_numpy(test_data[0]))
-        #    test_loss = forward(model, test_data, train_vars, loss_w, args).data[0]
+        logger.write("Validation forward\n")
+        if iter_id % 5 == 0:
+            test_data = next(test_iter)
+            train_vars[0].data.copy_(torch.from_numpy(test_data[0]))
+            test_loss = forward(model, test_data, train_vars, loss_w, args).data[0]
         # Training error
+        logger.write("Training forward\n")
         train_vars[0].data.copy_(torch.from_numpy(data[0]))
         train_loss = forward(model, data, train_vars, loss_w, args)
 
@@ -276,7 +278,7 @@ def main():
 
         # Print log
         t3 = time.time()
-        logger.write("[Volume %d] train_loss=%0.3f test_loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (volume_id,train_loss.data[0],0.25,optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
+        logger.write("[Volume %d] train_loss=%0.3f test_loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (volume_id,train_loss.data[0],test_loss,optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
 
         # Save progress
         if volume_id % args.volume_save == 0 or volume_id >= args.volume_total:
