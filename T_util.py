@@ -2,6 +2,7 @@ import sys
 import numpy as np
 import malis_core
 import torch
+import h5py
 
 # ---------------------
 # 1. utility layers
@@ -107,6 +108,11 @@ def load_checkpoint(snapshot, num_gpu):
             cp['state_dict']['module.'+k] = v
             cp['state_dict'].pop(k,None)
     return cp
+
+def writeh5(filename, datasetname, dtarray):
+    fid=h5py.File(filename,'w')
+    fid.create_dataset(datasetname,data=dtarray)
+    fid.close()
 
 def weight_filler(ksizes, opt_scale=2.0, opt_norm=2):
     kk=0

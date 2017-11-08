@@ -92,7 +92,14 @@ def get_data(args):
         train_data =  np.array(h5py.File(args.input+args.data_name,'r')[args.data_dataset_name],dtype=np.float32)[None,:]/(2.**8)
     elif args.data_name[-4:] == '.pkl':
         train_data =  np.array(pickle.load(args.input+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
-
+    else: # folder of images
+        import glob
+        from scipy import misc
+        imN=sorted(glob.glob(args.input+'*'+args.data_name))
+        im0 =  misc.imread(imN[0])
+        train_data =  np.zeros((len(imN),im0.shape[1],im0.shape[0]),dtype=np.float32)
+        for i in range(len(imN)):
+            train_data[i] = misc.imread(imN[i]).astype(np.float32)/(2.**8)  
     train_nhood = malis_core.mknhood3d()
     # load whole aff -> remove offset for label, pad a bit for rotation augmentation
     if os.path.exists(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5'):
@@ -100,7 +107,7 @@ def get_data(args):
     else: # pre-compute for faster i/o
         train_seg = np.array(h5py.File(args.input+args.label_name,'r')[args.label_dataset_name])
         train_label = malis_core.seg_to_affgraph(train_seg,train_nhood)
-        if aff_suf=='2':
+        if aff_suf=='2':# for same input-output size
             train_label = np.lib.pad(train_label,((0,0),(1,1),(1,1),(1,1)),mode='reflect')
         from T_util import writeh5
         writeh5(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5', 'main', train_label)
