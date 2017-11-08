@@ -67,7 +67,7 @@ def get_data(args):
         aff_suf='2';
 
     if args.task_opt==0:
-        test_data =  np.array(h5py.File(args.input+args.data_name,'rb')['main'],dtype=np.float32)[None,:]/(2.**8)
+        test_data =  np.array(h5py.File(args.input+args.data_name,'r')['main'],dtype=np.float32)[None,:]/(2.**8)
         out_data_size = model_io_size[0]
     elif args.task_opt in [1,2]: # load test prediction 
         test_data =  np.array(h5py.File(args.output,'r')['main'],dtype=np.float32)
