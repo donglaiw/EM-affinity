@@ -121,7 +121,7 @@ def get_data(args):
                            out_data_size=model_io_size[0],out_label_size=model_io_size[1])
     train_loader =  torch.utils.data.DataLoader(
             train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn = np_collate,
-            num_workers=args.num_cpu, pin_memory=True)
+            num_workers=0, pin_memory=True)
 
     # pre-allocate torch cuda tensor
     train_vars = [None]*3
@@ -158,7 +158,7 @@ def get_test_data(args):
                 out_data_size=out_data_size,out_label_size=model_io_size[1])
     test_loader =  torch.utils.data.DataLoader(
             test_dataset, batch_size= args.batch_size, shuffle=True, collate_fn = np_collate,
-            num_workers= args.num_cpu, pin_memory=True)
+            num_workers=0, pin_memory=True)
 
     return test_loader
 
@@ -249,11 +249,10 @@ def main():
 
     # Normalize learning rate
     args.lr = args.lr * args.batch_size / 2
-    train_iter, test_iter = itertools.cycle(iter(train_loader)), itertools.cycle(iter(test_loader))
+    train_iter, test_iter = train_loader.__iter__(), test_loader.__iter__()
     for iter_id, data in enumerate(train_iter):
         optimizer.zero_grad()
         volume_id = (iter_id + 1) * args.batch_size
-        pre_volume = pre_epoch * args.batch_size
 
         # copy data
         t1 = time.time()
@@ -261,13 +260,11 @@ def main():
         # Forward
         t2 = time.time()
         # Validation error
-        logger.write("Validation forward\n")
         if iter_id % 5 == 0:
             test_data = next(test_iter)
             train_vars[0].data.copy_(torch.from_numpy(test_data[0]))
             test_loss = forward(model, test_data, train_vars, loss_w, args).data[0]
         # Training error
-        logger.write("Training forward\n")
         train_vars[0].data.copy_(torch.from_numpy(data[0]))
         train_loss = forward(model, data, train_vars, loss_w, args)
 
@@ -282,7 +279,7 @@ def main():
 
         # Save progress
         if volume_id % args.volume_save == 0 or volume_id >= args.volume_total:
-            save_checkpoint(model, sn+('volume_%d.pth' % (pre_volume + volume_id)), optimizer, volume_id)
+            save_checkpoint(model, sn+('volume_%d.pth' % (pre_epoch + volume_id)), optimizer, volume_id)
 
         # Terminate
         if volume_id >= args.volume_total:
@@ -290,8 +287,7 @@ def main():
 
         # LR update
         if args.lr > 0:
-            decay_lr(optimizer, args.lr, pre_epoch+iter_id, lr_decay[0], lr_decay[1], lr_decay[2])
-
+            decay_lr(optimizer, args.lr, pre_epoch/args.batch_size+iter_id, lr_decay[0], lr_decay[1], lr_decay[2])
     logger.close()
 
 if __name__ == "__main__":

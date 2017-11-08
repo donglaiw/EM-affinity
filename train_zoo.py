@@ -4,9 +4,9 @@ import argparse
 from subprocess import check_output, call
 
 n_volume_pretrain = 20000
-n_volume_total = 250000
+n_volume_total = 200000
 n_max_gpus = 5
-n_cpus = 4
+n_cpus = 1
 per_gpu = 2
 
 parser = argparse.ArgumentParser()
@@ -32,11 +32,11 @@ prefix = 'results/{}/'.format(args.id)
 
 # Actual training
 snapshot = '{}/volume_{}.pth'.format(prefix, n_volume_pretrain)
-#call(map(str, ['python', 'E_train.py', '-a', args.arch, '-l', '0', '-lw', '2', '--volume-total', n_volume_pretrain, '--volume-save', '5000', '-o', prefix, '-bn', args.bn, '-g', n_gpus, '-b', batch, '-c', n_cpus]))
-call(map(str, ['python', 'E_train.py', '-a', args.arch, '-l', '1', '-lw', '0.5', '--volume-total', n_volume_total - n_volume_pretrain, '--volume-save', '50000', '-o', prefix, '-bn', args.bn, '-g', n_gpus, '-b', batch, '-c', n_cpus, '-s', snapshot]))
+# call(map(str, ['python', 'E_train.py', '-a', args.arch, '-l', '0', '-lw', '2', '--volume-total', n_volume_pretrain, '--volume-save', '5000', '-o', prefix, '-bn', 1, '-g', n_gpus, '-b', batch, '-c', n_cpus]))
+# call(map(str, ['python', 'E_train.py', '-a', args.arch, '-l', '1', '-lw', '0.5', '--volume-total', n_volume_total - n_volume_pretrain, '--volume-save', '50000', '-o', prefix, '-bn', args.bn, '-g', n_gpus, '-b', batch, '-c', n_cpus, '-s', snapshot]))
 
 # Evaluation
-snapshot = '{}/volume_{}.pth'.format(prefix, n_volume_total - 1)
+snapshot = '{}/volume_{}.pth'.format(prefix, n_volume_total)
 affinity = '{}/affinity.h5'.format(prefix)
 volume = '/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/'
 call(map(str, ['python', 'E_test.py', '-a', args.arch, '-s', snapshot, '-b', batch, '-g', n_gpus, '-c', n_cpus, '-o', affinity, '-bn', args.bn, '-i', volume]))
