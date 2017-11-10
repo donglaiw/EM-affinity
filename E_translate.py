@@ -34,7 +34,8 @@ def main():
         keras2pkl(args.keras_model, args.output+'.pkl')
     elif args.opt==1: 
         import pickle
-        from T_model import load_weights_pkl,unet3D,save_checkpoint
+        from T_util import load_weights_pkl,save_checkpoint
+        from T_model import unet3D
         model = unet3D(filters=[int(x) for x in args.num_filter.split(',')],
                       has_BN=args.has_BN==1)
         ww=pickle.load(open(args.output+'.pkl','rb'))
@@ -42,7 +43,7 @@ def main():
         sn =''
         if args.has_BN==1:
             sn+='_bn'
-            save_checkpoint(model, args.output+sn+'.pth')
+        save_checkpoint(model, args.output+sn+'.pth')
 
 if __name__ == "__main__":
     main()

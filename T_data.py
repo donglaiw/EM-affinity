@@ -5,6 +5,8 @@ import malis_core
 # for dataloader
 def np_collate(batch):
     "Puts each data field into a tensor with outer dimension batch size"
+    #for b in batch:
+    #    print b[2].shape,b[-1]
     return [np.stack([b[x] for b in batch], 0) for x in range(len(batch[0]))]
     
 class VolumeDataset(torch.utils.data.Dataset):

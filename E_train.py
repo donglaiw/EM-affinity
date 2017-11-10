@@ -14,9 +14,9 @@ import malis_core
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
     # I/O
-    parser.add_argument('-i','--input',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-3x6x6/',
+    parser.add_argument('-t','--train',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-3x6x6/',
                         help='input folder (train)')
-    parser.add_argument('-t','--test',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/',
+    parser.add_argument('-v','--val',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/',
                         help='input folder (test)')
     parser.add_argument('-dn','--data-name',  default='im_uint8.h5',
                         help='image data')
@@ -81,93 +81,79 @@ def get_args():
     args = parser.parse_args()
     return args
 
-def get_data(args):
-    # data/seg: initially same size
+def init(args):
+    sn = args.output+'/'
+    if not os.path.isdir(sn):
+        os.makedirs(sn)
     if args.pad_size==0:
         model_io_size = np.array(((31,204,204), (3,116,116)));
-        aff_suf='';
     elif args.pad_size==1:
         model_io_size = np.array(((18,224,224), (18,224,224)));
-        aff_suf='2';
-    train_offset = (model_io_size[0]-model_io_size[1])/2
+
+    # pre-allocate torch cuda tensor for malis loss
+    # input data
+    pre_vars = [None] *3  
+    pre_vars[0] = Variable(torch.zeros(args.batch_size, 1, model_io_size[0][0], model_io_size[0][1], model_io_size[0][2]).cuda(), requires_grad=False)
+    # gt label
+    pre_vars[1] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
+    if not (args.loss_opt == 0 and args.loss_weight_opt == 0): # weight
+        pre_vars[2] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
+    return model_io_size, pre_vars
+
+def get_data(args, model_io_size, opt='train'):
+    from T_util import cropCentral
+    if opt=='train':
+        dirName = args.train
+    else:
+        dirName = args.val
+
+    # 1. load data
+    model_io_offset = (model_io_size[0]-model_io_size[1])/2
     if args.data_name[-3:] == '.h5':
-        train_data =  np.array(h5py.File(args.input+args.data_name,'r')[args.data_dataset_name],dtype=np.float32)[None,:]/(2.**8)
+        d_data =  np.array(h5py.File(dirName+args.data_name,'r')[args.data_dataset_name],dtype=np.float32)[None,:]/(2.**8)
     elif args.data_name[-4:] == '.pkl':
-        train_data =  np.array(pickle.load(args.input+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
+        d_data =  np.array(pickle.load(dirName+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
     else: # folder of images
         import glob
         from scipy import misc
-        imN=sorted(glob.glob(args.input+'*'+args.data_name))
+        imN=sorted(glob.glob(dirName+'*'+args.data_name))
         im0 =  misc.imread(imN[0])
-        train_data =  np.zeros((len(imN),im0.shape[1],im0.shape[0]),dtype=np.float32)
+        data =  np.zeros((len(imN),im0.shape[1],im0.shape[0]),dtype=np.float32)
         for i in range(len(imN)):
-            train_data[i] = misc.imread(imN[i]).astype(np.float32)/(2.**8)  
-    train_nhood = malis_core.mknhood3d()
+            data[i] = misc.imread(imN[i]).astype(np.float32)/(2.**8)  
+    d_nhood = malis_core.mknhood3d()
+
     # load whole aff -> remove offset for label, pad a bit for rotation augmentation
-    if os.path.exists(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5'):
-        train_label = np.array(h5py.File(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5','r')['main'])
+    suf_aff = '_aff'+str(args.pad_size)
+    if os.path.exists(dirName+args.label_name[:-3]+suf_aff+'.h5'):
+        d_label = np.array(h5py.File(dirName+args.label_name[:-3]+suf_aff+'.h5','r')['main'])
     else: # pre-compute for faster i/o
-        train_seg = np.array(h5py.File(args.input+args.label_name,'r')[args.label_dataset_name])
-        train_label = malis_core.seg_to_affgraph(train_seg,train_nhood)
-        if aff_suf=='2':# for same input-output size
-            train_label = np.lib.pad(train_label,((0,0),(1,1),(1,1),(1,1)),mode='reflect')
+        d_seg = np.array(h5py.File(dirName+args.label_name,'r')[args.label_dataset_name])
+        d_label = malis_core.seg_to_affgraph(d_seg,d_nhood)
         from T_util import writeh5
-        writeh5(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5', 'main', train_label)
-    # either crop or pad whole
-    if train_offset[0]!=0:
-        train_label = train_label[:,train_offset[0]-1:-train_offset[0]+1,train_offset[1]-1:-train_offset[1]+1,train_offset[2]-1:-train_offset[2]+1]
-    # add sampler
-    nhood = None if args.loss_opt in [0] else train_nhood
-    color_scale = [(0.8,1.2), (0.9,1.1), None][args.data_color_opt]
-    color_shift = [(-0.2,0.2), (-0.1,0.1), None][args.data_color_opt]
-    color_clip = [(0.05,0.95), (0.05,0.95), None][args.data_color_opt]
-    rot = [[(1,1,1),True],[(0,0,0),False]][args.data_rotation_opt]
-    train_dataset = VolumeDatasetTrain(train_data, train_label, nhood, data_size=train_data.shape[1:],
+        writeh5(dirName+args.label_name[:-3]+suf_aff+'.h5', 'main', d_label)
+
+    d_data, d_label = cropCentral(d_data, d_label, model_io_offset)
+
+    # 2. add sampler
+    nhood = None if args.loss_opt in [0] else d_nhood
+    if opt=='train':
+        color_scale = [(0.8,1.2), (0.9,1.1), None][args.data_color_opt]
+        color_shift = [(-0.2,0.2), (-0.1,0.1), None][args.data_color_opt]
+        color_clip = [(0.05,0.95), (0.05,0.95), None][args.data_color_opt]
+        rot = [[(1,1,1),True],[(0,0,0),False]][args.data_rotation_opt]
+    else:
+        color_scale=None; color_shift=None; color_clip=None; rot=[(0,0,0),False]
+
+    dataset = VolumeDatasetTrain(d_data, d_label, d_nhood, data_size=d_data.shape[1:],
                            reflect=rot[0], swapxy=rot[1],
                            color_scale=color_scale,color_shift=color_shift,clip=color_clip,
                            out_data_size=model_io_size[0],out_label_size=model_io_size[1])
-    train_loader =  torch.utils.data.DataLoader(
-            train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn = np_collate,
+    # to have evaluation during training (two dataloader), has to set num_worker=0
+    data_loader =  torch.utils.data.DataLoader(
+            dataset, batch_size=args.batch_size, shuffle=True, collate_fn = np_collate,
             num_workers=0, pin_memory=True)
-
-    # pre-allocate torch cuda tensor
-    train_vars = [None]*3
-    # input data
-    train_vars[0] = Variable(torch.zeros(args.batch_size, 1, model_io_size[0][0], model_io_size[0][1], model_io_size[0][2]).cuda(), requires_grad=False)
-    # gt label
-    train_vars[1] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
-    if not (args.loss_opt == 0 and args.loss_weight_opt == 0):
-        # weight
-        train_vars[2] = Variable(torch.zeros(args.batch_size, 3, model_io_size[1][0], model_io_size[1][1], model_io_size[1][2]).cuda(), requires_grad=False)
-
-    return train_loader, train_vars,model_io_size
-
-
-def get_test_data(args):
-    # Handle padding
-    if args.pad_size==0:
-        model_io_size = np.array(((31,204,204), (3,116,116)));
-        aff_suf='';
-    elif args.pad_size==1:
-        model_io_size = np.array(((18,224,224), (18,224,224)));
-        aff_suf='2';
-
-    # Features
-    test_data =  np.array(h5py.File(args.test + args.data_name,'r')['main'],dtype=np.float32)[None,:]/(2.**8)
-    out_data_size = model_io_size[0]
-
-    # Labels
-    test_label = np.array(h5py.File(args.test + args.label_name[:-3]+'_crop_aff'+aff_suf+'.h5','r')['main'])
-    nhood = malis_core.mknhood3d() if args.loss_opt==1 else None
-
-    # Loaders
-    test_dataset = VolumeDatasetTest(test_data, test_label, nhood, data_size=test_data.shape[1:],
-                out_data_size=out_data_size,out_label_size=model_io_size[1])
-    test_loader =  torch.utils.data.DataLoader(
-            test_dataset, batch_size= args.batch_size, shuffle=True, collate_fn = np_collate,
-            num_workers=0, pin_memory=True)
-
-    return test_loader
+    return data_loader
 
 def get_model(args, model_io_size):
     num_filter = [int(x) for x in args.num_filter.split(',')]
@@ -234,13 +220,13 @@ def forward(model, data, vars, loss_w, args):
 
 def main():
     args = get_args()
-    sn = args.output+'/'
-    if not os.path.isdir(sn):
-        os.makedirs(sn)
+
+    print '0. initial setup'
+    model_io_size, pre_vars = init(args) 
 
     print '1. setup data'
-    train_loader, train_vars, model_io_size = get_data(args)
-    test_loader = get_test_data(args)
+    train_loader = get_data(args, model_io_size, 'train')
+    test_loader = get_data(args, model_io_size,'test')
 
     print '2. setup model'
     model, loss_w, pre_epoch, logger = get_model(args, model_io_size)
@@ -269,11 +255,11 @@ def main():
         # Validation error
         if iter_id % 5 == 0:
             test_data = next(test_iter)
-            train_vars[0].data.copy_(torch.from_numpy(test_data[0]))
-            test_loss = forward(model, test_data, train_vars, loss_w, args).data[0]
+            pre_vars[0].data.copy_(torch.from_numpy(test_data[0]))
+            test_loss = forward(model, test_data, pre_vars, loss_w, args).data[0]
         # Training error
-        train_vars[0].data.copy_(torch.from_numpy(data[0]))
-        train_loss = forward(model, data, train_vars, loss_w, args)
+        pre_vars[0].data.copy_(torch.from_numpy(data[0]))
+        train_loss = forward(model, data, pre_vars, loss_w, args)
 
         # Backward
         if args.lr > 0:

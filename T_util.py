@@ -159,13 +159,13 @@ def load_weights_pkl(model, weights):
     for i in range(3):
         for j in range(2):
             ww = weights['Convolution'+str(2*i+j+1)]
-            model.down[i].conv.convs[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
-            model.down[i].conv.convs[j].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
+            model.down[i].conv[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
+            model.down[i].conv[j].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
     # center
     for j in range(2):
         ww = weights['Convolution'+str(7+j)]
-        model.center.conv.convs[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
-        model.center.conv.convs[j].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
+        model.center.conv[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
+        model.center.conv[j].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
     # up
     for i in range(3):
         ww = weights['Deconvolution'+str(i+1)]
@@ -178,11 +178,42 @@ def load_weights_pkl(model, weights):
             model.up[i].up.weight.data.copy_(torch.from_numpy(ww['w']))
         for j in range(2):
             ww = weights['Convolution'+str(10+3*i+j)]
-            model.up[i].conv.convs[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
-            model.up[i].conv.convs[j].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
+            model.up[i].conv[j].cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
+            model.up[i].conv[j].cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
     ww = weights['Convolution18']
     model.final.conv.cbrd._modules['0'].weight.data.copy_(torch.from_numpy(ww['w']))
     model.final.conv.cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
+
+# crop data correctly
+def cropCentral(data,label,offset):
+    # CxDxWxH
+    # as z axis is precious, we pad data by 1 (used for affinity flip, not eval)
+    label = np.lib.pad(label,((0,0),(1,1),(1,1),(1,1)),mode='reflect')
+
+    sz_diff = np.array(data.shape)-np.array(label.shape)
+    sz_offset = sz_diff[1:]/2 # floor
+    sz_offset2 = sz_diff[1:]-sz_diff[1:]/2 #ceil
+    # extra padding for data augmentation affinity
+    sz_offset+=1
+    sz_offset2+=1
+
+    if any(sz_offset-offset) or any(sz_offset-offset):
+        # z axis
+        if offset[0] > sz_offset2[0]:
+            label=label[:,offset[0]-sz_offset[0]:data.shape[1]-(offset[0]-sz_offset2[0])]
+        else:
+            # pad one first
+            data=data[:,sz_offset[0]-offset[0]:data.shape[1]-(sz_offset2[0]-offset[0])]
+        # y axis
+        if offset[1] > sz_offset2[1]:
+            label=label[:,:,(offset[1]-sz_offset[1]):(label.shape[2]-(offset[1]-sz_offset2[1]))]
+        else:
+            data=data[:,:,sz_offset[1]-offset[1]:data.shape[2]-(sz_offset2[1]-offset[1])]
+        if offset[2] > sz_offset2[2]:
+            label=label[:,:,:,offset[2]-sz_offset[2]:label.shape[3]-(offset[2]-sz_offset2[2])]
+        else:
+            data=data[:,:,:,sz_offset[2]-offset[2]:data.shape[3]-(sz_offset2[2]-offset[2])]
+    return data,label
 
 # ---------------------
 # 3. for visualization
