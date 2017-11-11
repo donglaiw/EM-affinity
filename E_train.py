@@ -166,22 +166,22 @@ def get_model(args, model_io_size):
     conn_dims = [args.batch_size,3]+list(model_io_size[1])
     if args.loss_opt == 0: # L2 training
         loss_w = labelWeight(conn_dims, args.loss_weight_opt)
-        save_suf = '_L2_'+str(args.lr)
+        log_suf = '_L2_'+str(args.lr)
     elif args.loss_opt == 1: # malis training
         loss_w = malisWeight(conn_dims, args.loss_weight_opt)
-        save_suf = '_malis_'+str(args.lr)
-    save_suf += '_'+str(args.loss_weight_opt)
+        log_suf = '_malis_'+str(args.lr)
+    log_suf += '_'+str(args.loss_weight_opt)
 
     # load previous model
     pre_epoch = args.pre_epoch
     if len(args.snapshot)>0:
-        save_suf += '_'+args.snapshot[:args.snapshot.rfind('.')] if '/' not in args.snapshot else args.snapshot[args.snapshot.rfind('/')+1:args.snapshot.rfind('.')]
+        log_suf += '_'+args.snapshot[:args.snapshot.rfind('.')] if '/' not in args.snapshot else args.snapshot[args.snapshot.rfind('/')+1:args.snapshot.rfind('.')]
         cp = load_checkpoint(args.snapshot, args.num_gpu)
         model.load_state_dict(cp['state_dict'])
         if pre_epoch == 0:
             pre_epoch = cp['epoch']
 
-    logger = open(args.output+'log'+save_suf+'.txt','w',0) # unbuffered, write instantly
+    logger = open(args.output+'log'+log_suf+'.txt','w',0) # unbuffered, write instantly
     return model, loss_w, pre_epoch, logger
 
 def get_optimizer(args, model, pre_epoch=0):
@@ -245,7 +245,7 @@ def main():
     train_iter, test_iter = train_loader.__iter__(), test_loader.__iter__()
     for iter_id, data in enumerate(train_iter):
         optimizer.zero_grad()
-        volume_id = (iter_id + 1) * args.batch_size
+        volume_id = (iter_id + 1) * args.batch_size + pre_epoch
 
         # copy data
         t1 = time.time()
@@ -271,8 +271,8 @@ def main():
         logger.write("[Volume %d] train_loss=%0.3f test_loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (volume_id,train_loss.data[0],test_loss,optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
 
         # Save progress
-        if volume_id % args.volume_save == 0 or volume_id >= args.volume_total:
-            save_checkpoint(model, sn+('volume_%d.pth' % (pre_epoch + volume_id)), optimizer, volume_id)
+        if volume_id*args.batch_size % args.volume_save <args.batch_size or volume_id >= args.volume_total:
+            save_checkpoint(model, args.output+('/volume_%d.pth' % (pre_epoch + volume_id)), optimizer, volume_id)
 
         # Terminate
         if volume_id >= args.volume_total:
