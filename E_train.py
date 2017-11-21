@@ -16,7 +16,7 @@ def get_args():
     # I/O
     parser.add_argument('-t','--train',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-3x6x6/',
                         help='input folder (train)')
-    parser.add_argument('-v','--val',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/',
+    parser.add_argument('-v','--val',  default='',
                         help='input folder (test)')
     parser.add_argument('-dn','--data-name',  default='im_uint8.h5',
                         help='image data')
@@ -108,6 +108,8 @@ def get_data(args, model_io_size, opt='train'):
     else:
         dirName = args.val.split('@')
         numWorker = 1
+    if len(dirName[0])==0:
+        return None
 
     # 1. load data
     d_data = [None]*len(dirName)
@@ -153,7 +155,6 @@ def get_data(args, model_io_size, opt='train'):
                            reflect=rot[0], swapxy=rot[1],
                            color_scale=color_scale,color_shift=color_shift,clip=color_clip,
                            out_data_size=model_io_size[0],out_label_size=model_io_size[1])
-    import pdb; pdb.set_trace()
     # to have evaluation during training (two dataloader), has to set num_worker=0
     data_loader =  torch.utils.data.DataLoader(
             dataset, batch_size=args.batch_size, shuffle=True, collate_fn = np_collate,
@@ -231,7 +232,7 @@ def main():
 
     print '1. setup data'
     train_loader = get_data(args, model_io_size, 'train')
-    test_loader = get_data(args, model_io_size,'test')
+    test_loader = get_data(args, model_io_size,'val')
 
     print '2. setup model'
     model, loss_w, pre_epoch, logger = get_model(args, model_io_size)
@@ -247,7 +248,10 @@ def main():
 
     # Normalize learning rate
     args.lr = args.lr * args.batch_size / 2
-    train_iter, test_iter = train_loader.__iter__(), test_loader.__iter__()
+    train_iter = train_loader.__iter__()
+    test_iter = test_loader.__iter__() if test_loader is not None else None
+    test_loss = 0
+
     from T_vis import visSliceSeg
     for iter_id, data in enumerate(train_iter):
         optimizer.zero_grad()
@@ -260,7 +264,7 @@ def main():
         t2 = time.time()
 
         # Training error
-        visSliceSeg(data[0], data[2], offset=[14,44,44],outN='result/db/train_'+str(iter_id)+'_'+str(data[3][0][0])+'.png', frame_id=0)
+        #visSliceSeg(data[0], data[2], offset=[14,44,44],outN='result/db/train_'+str(iter_id)+'_'+str(data[3][0][0])+'.png', frame_id=0)
         pre_vars[0].data.copy_(torch.from_numpy(data[0]))
         train_loss = forward(model, data, pre_vars, loss_w, args)
         # Backward
@@ -269,9 +273,9 @@ def main():
             optimizer.step()
 
         # Validation error
-        if iter_id % 5 == 0:
+        if test_iter is not None and iter_id % 5 == 0:
             test_data = next(test_iter)
-            visSliceSeg(test_data[0], test_data[2], offset=[14,44,44],outN='result/db/test_'+str(iter_id)+'_'+str(test_data[3][0][0])+'.png', frame_id=0)
+            #visSliceSeg(test_data[0], test_data[2], offset=[14,44,44],outN='result/db/test_'+str(iter_id)+'_'+str(test_data[3][0][0])+'.png', frame_id=0)
             pre_vars[0].data.copy_(torch.from_numpy(test_data[0]))
             test_loss = forward(model, test_data, pre_vars, loss_w, args).data[0]
 
@@ -289,7 +293,7 @@ def main():
 
         # LR update
         if args.lr > 0:
-            decay_lr(optimizer, args.lr, pre_epoch/args.batch_size+iter_id, lr_decay[0], lr_decay[1], lr_decay[2])
+            decay_lr(optimizer, args.lr, pre_epoch+volume_id, lr_decay[0], lr_decay[1], lr_decay[2])
     logger.close()
 
 if __name__ == "__main__":
