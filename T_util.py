@@ -39,11 +39,14 @@ class labelWeight():
         w_pos = self.opt_weight
         w_neg = 1.0-self.opt_weight
         for i in range(data.shape[0]):
-            if self.opt_weight==2:
+            if self.opt_weight in [2,3]:
                 frac_pos = np.clip(data[i].mean(), self.clip_low, self.clip_high) #for binary labels
                 # can't be all zero
                 w_pos = 1.0/(2.0*frac_pos)
                 w_neg = 1.0/(2.0*(1.0-frac_pos))
+                if self.opt_weight == 3:
+                    w_pos = w_pos**2
+                    w_neg = w_neg**2
             self.weight[i] = np.add((data[i] >= self.thres) * w_pos, (data[i] < self.thres) * w_neg)
         return self.weight/self.num_elem
 
@@ -200,7 +203,7 @@ def cropCentral(data,label,offset):
     if any(sz_offset-offset) or any(sz_offset-offset):
         # z axis
         if offset[0] > sz_offset2[0]:
-            label=label[:,offset[0]-sz_offset[0]:data.shape[1]-(offset[0]-sz_offset2[0])]
+            label=label[:,offset[0]-sz_offset[0]:label.shape[1]-(offset[0]-sz_offset2[0])]
         else:
             # pad one first
             data=data[:,sz_offset[0]-offset[0]:data.shape[1]-(sz_offset2[0]-offset[0])]

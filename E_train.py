@@ -103,40 +103,44 @@ def init(args):
 def get_data(args, model_io_size, opt='train'):
     from T_util import cropCentral
     if opt=='train':
-        dirName = args.train
+        dirName = args.train.split('@')
+        numWorker = args.num_cpu
     else:
-        dirName = args.val
+        dirName = args.val.split('@')
+        numWorker = 1
 
     # 1. load data
-    model_io_offset = (model_io_size[0]-model_io_size[1])/2
-    if args.data_name[-3:] == '.h5':
-        d_data =  np.array(h5py.File(dirName+args.data_name,'r')[args.data_dataset_name],dtype=np.float32)[None,:]/(2.**8)
-    elif args.data_name[-4:] == '.pkl':
-        d_data =  np.array(pickle.load(dirName+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
-    else: # folder of images
-        import glob
-        from scipy import misc
-        imN=sorted(glob.glob(dirName+'*'+args.data_name))
-        im0 =  misc.imread(imN[0])
-        data =  np.zeros((len(imN),im0.shape[1],im0.shape[0]),dtype=np.float32)
-        for i in range(len(imN)):
-            data[i] = misc.imread(imN[i]).astype(np.float32)/(2.**8)  
-    d_nhood = malis_core.mknhood3d()
-
-    # load whole aff -> remove offset for label, pad a bit for rotation augmentation
+    d_data = [None]*len(dirName)
+    d_label = [None]*len(dirName)
     suf_aff = '_aff'+str(args.pad_size)
-    if os.path.exists(dirName+args.label_name[:-3]+suf_aff+'.h5'):
-        d_label = np.array(h5py.File(dirName+args.label_name[:-3]+suf_aff+'.h5','r')['main'])
-    else: # pre-compute for faster i/o
-        d_seg = np.array(h5py.File(dirName+args.label_name,'r')[args.label_dataset_name])
-        d_label = malis_core.seg_to_affgraph(d_seg,d_nhood)
-        from T_util import writeh5
-        writeh5(dirName+args.label_name[:-3]+suf_aff+'.h5', 'main', d_label)
+    model_io_offset = (model_io_size[0]-model_io_size[1])/2
+    d_nhood = malis_core.mknhood3d()
+    nhood = None if args.loss_opt in [0] else d_nhood
+    for i in range(len(dirName)):
+        if args.data_name[-3:] == '.h5':
+            d_data[i] =  np.array(h5py.File(dirName[i]+args.data_name,'r')[args.data_dataset_name],dtype=np.float32)[None,:]/(2.**8)
+        elif args.data_name[-4:] == '.pkl':
+            d_data[i] =  np.array(pickle.load(dirName[i]+args.data_name,'rb'),dtype=np.float32)[None,:]/(2.**8)
+        else: # folder of images
+            import glob
+            from scipy import misc
+            imN=sorted(glob.glob(dirName[i]+'*'+args.data_name))
+            im0 =  misc.imread(imN[0])
+            d_data[i] =  np.zeros((len(imN),im0.shape[1],im0.shape[0]),dtype=np.float32)
+            for j in range(len(imN)):
+                d_data[i][j] = misc.imread(imN[j]).astype(np.float32)/(2.**8)  
 
-    d_data, d_label = cropCentral(d_data, d_label, model_io_offset)
+        # load whole aff -> remove offset for label, pad a bit for rotation augmentation
+        if os.path.exists(dirName[i]+args.label_name[:-3]+suf_aff+'.h5'):
+            d_label[i] = np.array(h5py.File(dirName[i]+args.label_name[:-3]+suf_aff+'.h5','r')['main'])
+        else: # pre-compute for faster i/o
+            d_seg = np.array(h5py.File(dirName[i]+args.label_name,'r')[args.label_dataset_name])
+            d_label[i] = malis_core.seg_to_affgraph(d_seg,d_nhood)
+            from T_util import writeh5
+            writeh5(dirName[i]+args.label_name[:-3]+suf_aff+'.h5', 'main', d_label[i])
+        d_data[i], d_label[i] = cropCentral(d_data[i], d_label[i], model_io_offset)
 
     # 2. add sampler
-    nhood = None if args.loss_opt in [0] else d_nhood
     if opt=='train':
         color_scale = [(0.8,1.2), (0.9,1.1), None][args.data_color_opt]
         color_shift = [(-0.2,0.2), (-0.1,0.1), None][args.data_color_opt]
@@ -145,14 +149,15 @@ def get_data(args, model_io_size, opt='train'):
     else:
         color_scale=None; color_shift=None; color_clip=None; rot=[(0,0,0),False]
 
-    dataset = VolumeDatasetTrain(d_data, d_label, d_nhood, data_size=d_data.shape[1:],
+    dataset = VolumeDatasetTrain(d_data, d_label, d_nhood, data_size=[x.shape[1:] for x in d_data],
                            reflect=rot[0], swapxy=rot[1],
                            color_scale=color_scale,color_shift=color_shift,clip=color_clip,
                            out_data_size=model_io_size[0],out_label_size=model_io_size[1])
+    import pdb; pdb.set_trace()
     # to have evaluation during training (two dataloader), has to set num_worker=0
     data_loader =  torch.utils.data.DataLoader(
             dataset, batch_size=args.batch_size, shuffle=True, collate_fn = np_collate,
-            num_workers=0, pin_memory=True)
+            num_workers=numWorker, pin_memory=True)
     return data_loader
 
 def get_model(args, model_io_size):
@@ -243,6 +248,7 @@ def main():
     # Normalize learning rate
     args.lr = args.lr * args.batch_size / 2
     train_iter, test_iter = train_loader.__iter__(), test_loader.__iter__()
+    from T_vis import visSliceSeg
     for iter_id, data in enumerate(train_iter):
         optimizer.zero_grad()
         volume_id = (iter_id + 1) * args.batch_size + pre_epoch
@@ -252,19 +258,22 @@ def main():
 
         # Forward
         t2 = time.time()
-        # Validation error
-        if iter_id % 5 == 0:
-            test_data = next(test_iter)
-            pre_vars[0].data.copy_(torch.from_numpy(test_data[0]))
-            test_loss = forward(model, test_data, pre_vars, loss_w, args).data[0]
+
         # Training error
+        visSliceSeg(data[0], data[2], offset=[14,44,44],outN='result/db/train_'+str(iter_id)+'_'+str(data[3][0][0])+'.png', frame_id=0)
         pre_vars[0].data.copy_(torch.from_numpy(data[0]))
         train_loss = forward(model, data, pre_vars, loss_w, args)
-
         # Backward
         if args.lr > 0:
             train_loss.backward()
             optimizer.step()
+
+        # Validation error
+        if iter_id % 5 == 0:
+            test_data = next(test_iter)
+            visSliceSeg(test_data[0], test_data[2], offset=[14,44,44],outN='result/db/test_'+str(iter_id)+'_'+str(test_data[3][0][0])+'.png', frame_id=0)
+            pre_vars[0].data.copy_(torch.from_numpy(test_data[0]))
+            test_loss = forward(model, test_data, pre_vars, loss_w, args).data[0]
 
         # Print log
         t3 = time.time()

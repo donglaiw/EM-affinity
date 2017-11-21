@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import copy
 # --------------------------------
 # building blocks for unet construction
 # --------------------------------
@@ -220,7 +221,11 @@ class unetFinal(nn.Module):
 
 
 class unet3D(nn.Module): # symmetric unet
-    def __init__(self, opt_arch=[[0,0],[0],[0,0,0],[0]], in_num=1, out_num=3, filters=[24,72,216,648],
+    # default global parameter 
+    # opt_arch: change component 
+    # component parameter
+    def __init__(self, opt_arch=[[0,0],[0],[0,0,0],[0]], opt_param=[[0],[0],[0],[0]], 
+                 in_num=1, out_num=3, filters=[24,72,216,648],
                  has_bias=True, has_BN=False,has_dropout=0,pad_size=0,pad_type='',relu_slope=0.005,
                  pool_kernel=(1,2,2), pool_stride=(1,2,2)):
         super(unet3D, self).__init__()
@@ -232,7 +237,12 @@ class unet3D(nn.Module): # symmetric unet
         self.down = nn.ModuleList([
                     unetDown(opt_arch[0], filters_in[x], filters_in[x+1], cfg_pool, cfg_conv, x) 
                     for x in range(len(filters)-1)]) 
-        self.center = unetCenter(opt_arch[1], filters[-2], filters[-1], cfg_conv)
+
+        cfg_conv_c = copy.deepcopy(cfg_conv)
+        if opt_param[1][0]==1:
+            # pad for conv
+            cfg_conv_c['pad_size']=1;cfg_conv_c['pad_type']='replicate';
+        self.center = unetCenter(opt_arch[1], filters[-2], filters[-1], cfg_conv_c)
         self.up = nn.ModuleList([
                     unetUp(opt_arch[2], filters[x], filters[x-1], filters[x-1], filters[x-1], cfg_pool, cfg_conv, x)
                     for x in range(len(filters)-1,0,-1)])

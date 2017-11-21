@@ -79,7 +79,7 @@ def get_data(args):
         test_label = np.array(h5py.File(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5','r')['main'])
         if args.loss_opt==1: # evaluate malis: need segmentation
             nhood = malis_core.mknhood3d()
-    test_dataset = VolumeDatasetTest(test_data, test_label, nhood, data_size=test_data.shape[1:],sample_stride=model_io_size[1],
+    test_dataset = VolumeDatasetTest([test_data], [test_label], nhood, data_size=[test_data.shape[1:]],sample_stride=model_io_size[1],
                     out_data_size=out_data_size,out_label_size=model_io_size[1])
 
     test_loader =  torch.utils.data.DataLoader(
@@ -133,9 +133,9 @@ def main():
                 y_pred = model(test_var).data.cpu().numpy()
                 for j in range(data[0].shape[0]):
                     pp = data[3][j] 
-                    pred[:,pp[0]:pp[0]+model_io_size[1][0],
-                          pp[1]:pp[1]+model_io_size[1][1],
-                          pp[2]:pp[2]+model_io_size[1][2]] = y_pred[j].copy()
+                    pred[:,pp[1]:pp[1]+model_io_size[1][0],
+                          pp[2]:pp[2]+model_io_size[1][1],
+                          pp[3]:pp[3]+model_io_size[1][2]] = y_pred[j].copy()
                 print "finish batch: [%d/%d] " % (batch_id, num_batch)
                 sys.stdout.flush()
                 if batch_id == args.batch_end:
