@@ -124,8 +124,8 @@ void malis_loss_weights_cpp_both(const uint64_t* seg,
                const int pos, const float weight_opt){
 
     /* Disjoint sets and sparse overlap vectors */
-    const int64_t nVert = pre_ve[0];
-    const int64_t nEdge = pre_ve[1];
+    const uint64_t nVert = pre_ve[0];
+    const uint64_t nEdge = pre_ve[1];
     uint64_t conn_num_dims = nhood_dims[1]+1;
     
     vector<map<uint64_t,uint64_t> > overlap(nVert);
@@ -133,8 +133,9 @@ void malis_loss_weights_cpp_both(const uint64_t* seg,
     vector<uint64_t> parent(nVert);
     boost::disjoint_sets<uint64_t*, uint64_t*> dsets(&rank[0],&parent[0]);
     std::map<int64_t, int64_t> segSizes;
-    int nLabeledVert = 0;
-    int nPairPos = 0;
+    uint64_t nLabeledVert = 0;
+    uint64_t nPairPos = 0;
+    // int mm=0;
     for (int i=0; i<nVert; ++i){
         dsets.make_set(i);
         if (0!=seg[i]) {
@@ -142,15 +143,18 @@ void malis_loss_weights_cpp_both(const uint64_t* seg,
             ++nLabeledVert;
             ++segSizes[seg[i]];
             nPairPos += (segSizes[seg[i]] - 1); //add pair with previous seg label
+            //if(seg[i]>mm){mm=seg[i];}
         }
     }
 
+    // for (int i=0; i<=mm; ++i){std::cout<<segSizes[i]<<",";}std::cout<<std::endl;
     float nPairPosNormInv;
     if (pos==1){
         nPairPosNormInv = 1.0/(float)nPairPos;
     }else{
         nPairPosNormInv = 1.0/(nLabeledVert*(nLabeledVert-1)*0.5-nPairPos);
     }
+    //std::cout<<nLabeledVert<<"hh: "<<nLabeledVert*(nLabeledVert-1)*0.5<<","<<nPairPos<<std::endl;
     if(weight_opt<=1){
         if (pos==1){
             nPairPosNormInv *= weight_opt;
@@ -168,7 +172,7 @@ void malis_loss_weights_cpp_both(const uint64_t* seg,
     sort( Pqueue2.begin(), Pqueue2.end(), AffinityGraphCompare<float>( edgeWeight ) );
 
     /* Start MST */
-    int minEdge, e, v1, v2;
+    uint64_t minEdge, e, v1, v2;
     uint64_t set1, set2;
     float nPair = 0;
     map<uint64_t,uint64_t>::iterator it1, it2;
@@ -177,7 +181,7 @@ void malis_loss_weights_cpp_both(const uint64_t* seg,
     //if(pos==1){ db.open("/n/coxfs01/donglai/malis_trans/db/mst-pt-pos.txt");}
     float ll=0;
     /* Start Kruskal's */
-    for (unsigned int i = 0; i < Pqueue2.size(); ++i ) {
+    for (uint64_t i = 0; i < Pqueue2.size(); ++i ) {
         minEdge = Pqueue2[i];
         // std::cout <<"do:"<<i<<","<<minEdge<< "\n";
         e =  minEdge / nVert;

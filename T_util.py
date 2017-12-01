@@ -1,7 +1,6 @@
 import sys
 import numpy as np
 import malis_core
-import torch
 import h5py
 
 # ---------------------
@@ -44,9 +43,9 @@ class labelWeight():
                 # can't be all zero
                 w_pos = 1.0/(2.0*frac_pos)
                 w_neg = 1.0/(2.0*(1.0-frac_pos))
-                if self.opt_weight == 3:
-                    w_pos = w_pos**2
-                    w_neg = w_neg**2
+                if self.opt_weight == 3: #match caffe param
+                    w_pos = 0.5*w_pos**2
+                    w_neg = 0.5*w_neg**2
             self.weight[i] = np.add((data[i] >= self.thres) * w_pos, (data[i] < self.thres) * w_neg)
         return self.weight/self.num_elem
 
@@ -61,6 +60,7 @@ def weightedMSE_np(input, target, weight=None, normalize_weight=False):
             return np.mean(weight * (input - target) ** 2)
 
 def weightedMSE(input, target, weight=None, normalize_weight=False):
+    import torch
     # normalize by batchsize
     if weight is None:
         return torch.sum((input - target) ** 2)/input.size(0)
@@ -86,6 +86,7 @@ def decay_lr(optimizer, base_lr, iter, policy='inv',gamma=0.0001, power=0.75, st
             group['lr'] = new_lr 
 
 def save_checkpoint(model, filename='checkpoint.pth', optimizer=None, epoch=1):
+    import torch
     if optimizer is None:
         torch.save({
             'epoch': epoch,
@@ -99,6 +100,7 @@ def save_checkpoint(model, filename='checkpoint.pth', optimizer=None, epoch=1):
         }, filename)
 
 def load_checkpoint(snapshot, num_gpu):
+    import torch
     # take care of multi-single gpu conversion
     cp = torch.load(snapshot)
     if num_gpu==1 and cp['state_dict'].keys()[0][:7]=='module.':
@@ -117,6 +119,21 @@ def writeh5(filename, datasetname, dtarray):
     fid.create_dataset(datasetname,data=dtarray)
     fid.close()
 
+def caffe2pkl(mn,wn,outN=None):
+    import caffe
+    net0 = caffe.Net(mn,caffe.TEST,weights=wn)
+    net={}
+    for k,v in net0.params.items():
+        layer={}
+        layer['w']=v[0].data
+        if len(v)>1: # deconv layer: no bias term
+            layer['b']=v[1].data
+        net[k]=layer
+    if outN is None:
+        return net
+    else:
+        import pickle
+        pickle.dump(net,open(outN,'wb'))
 def weight_filler(ksizes, opt_scale=2.0, opt_norm=2):
     kk=0
     if opt_norm==0:# n_in
@@ -130,6 +147,7 @@ def weight_filler(ksizes, opt_scale=2.0, opt_norm=2):
     return ww
 
 def init_weights(model,opt_init=0):
+    import torch
     opt=[[2.0,2],[3.0,0]][opt_init]
     for i in range(3):
         for j in range(2):
@@ -156,6 +174,7 @@ def init_weights(model,opt_init=0):
     model.final.convs[0].cbrd.bias.data.fill_(0.0)
 
 def load_weights_pkl(model, weights):
+    import torch
     # todo: rewrite for more flexibility
     # todo: add BN param: running mean
     # down
@@ -188,17 +207,17 @@ def load_weights_pkl(model, weights):
     model.final.conv.cbrd._modules['0'].bias.data.copy_(torch.from_numpy(ww['b']))
 
 # crop data correctly
-def cropCentral(data,label,offset):
+def cropCentral(data,label,offset,extraPad=True):
     # CxDxWxH
-    # as z axis is precious, we pad data by 1 (used for affinity flip, not eval)
-    label = np.lib.pad(label,((0,0),(1,1),(1,1),(1,1)),mode='reflect')
+    if extraPad: # as z axis is precious, we pad data by 1 (used for affinity flip, not eval)
+        label = np.lib.pad(label,((0,0),(1,1),(1,1),(1,1)),mode='reflect')
 
     sz_diff = np.array(data.shape)-np.array(label.shape)
     sz_offset = sz_diff[1:]/2 # floor
     sz_offset2 = sz_diff[1:]-sz_diff[1:]/2 #ceil
-    # extra padding for data augmentation affinity
-    sz_offset+=1
-    sz_offset2+=1
+    if extraPad: # extra padding for data augmentation affinity
+        sz_offset+=1
+        sz_offset2+=1
 
     if any(sz_offset-offset) or any(sz_offset-offset):
         # z axis
@@ -240,3 +259,23 @@ def getAvg(rr, avg_step):
     num_avg = int(np.floor(len(rr)/float(avg_step)))
     rr_avg = rr[:num_avg*avg_step].reshape((num_avg,avg_step)).mean(axis=1)
     return rr_avg
+
+def plot_result(inN, step=100, outN='result.png'):
+    import csv
+    import matplotlib as mpl
+    mpl.use('Agg')
+    import matplotlib.pyplot as plt
+    with open(inN, 'rb') as logs:
+         reader = csv.reader(logs, delimiter = ' ')
+         rows = list(reader)
+         x = [int(row[1][:-1]) for row in rows]
+         ytrain = np.array([float(row[2].split('=')[1]) for row in rows])
+         ytest = np.array([float(row[3].split('=')[1]) for row in rows])
+         ytrain = np.mean(ytrain[:(ytrain.shape[0]/step)*step].reshape(-1, step), axis=1)
+         ytest = np.mean(ytest[:(ytest.shape[0]/step)*step].reshape(-1, step), axis=1)
+         plt.cla()
+         plt.plot(ytrain)
+         plt.plot(ytest)
+         plt.legend(['Training loss', 'Testing loss'])
+         plt.savefig(outN)
+         return ytrain, ytest

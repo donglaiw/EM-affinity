@@ -216,6 +216,7 @@ class unetFinal(nn.Module):
             self.conv = unitConv3dRBD(in_num, out_num, 1, 1, 0, '', True)
         elif opt[0]==1: # resnet
             self.conv = blockResNet(unitResBasic, 1, in_num, out_num, 1, cfg={'pad_size':0, 'pad_type':'constant,0', 'has_BN':False, 'relu_slope':-1})
+
     def forward(self, x):
         return F.sigmoid(self.conv(x))
 
@@ -229,23 +230,31 @@ class unet3D(nn.Module): # symmetric unet
                  has_bias=True, has_BN=False,has_dropout=0,pad_size=0,pad_type='',relu_slope=0.005,
                  pool_kernel=(1,2,2), pool_stride=(1,2,2)):
         super(unet3D, self).__init__()
+        self.depth = len(filters)-1 
+        filters_in = [in_num] + filters[:-1]
         cfg_conv={'has_bias':has_bias,'has_BN':has_BN, 'has_dropout':has_dropout, 'pad_size':pad_size, 'pad_type':pad_type, 'relu_slope':relu_slope}
         cfg_pool={'pool_kernel':pool_kernel, 'pool_stride':pool_stride}
 
-        self.depth = len(filters)-1 
-        filters_in = [in_num] + filters[:-1]
+        # --- down arm ---
         self.down = nn.ModuleList([
                     unetDown(opt_arch[0], filters_in[x], filters_in[x+1], cfg_pool, cfg_conv, x) 
                     for x in range(len(filters)-1)]) 
 
+        # --- center arm ---
         cfg_conv_c = copy.deepcopy(cfg_conv)
-        if opt_param[1][0]==1:
-            # pad for conv
+        if opt_param[1][0]==1: # pad for conv
             cfg_conv_c['pad_size']=1;cfg_conv_c['pad_type']='replicate';
         self.center = unetCenter(opt_arch[1], filters[-2], filters[-1], cfg_conv_c)
+
+        # --- up arm ---
+        cfg_conv_u = copy.deepcopy(cfg_conv)
+        if opt_param[2][0]==1: # pad for conv
+            cfg_conv_u['pad_size']=1;cfg_conv_c['pad_type']='replicate';
         self.up = nn.ModuleList([
-                    unetUp(opt_arch[2], filters[x], filters[x-1], filters[x-1], filters[x-1], cfg_pool, cfg_conv, x)
+                    unetUp(opt_arch[2], filters[x], filters[x-1], filters[x-1], filters[x-1], cfg_pool, cfg_conv_u, x)
                     for x in range(len(filters)-1,0,-1)])
+
+        # --- final arm ---
         self.final = unetFinal(opt_arch[3], filters[0], out_num) 
 
     def forward(self, x):

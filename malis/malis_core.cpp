@@ -3084,7 +3084,7 @@ static PyObject *__pyx_pf_10malis_core_2malis_loss_weights_both(CYTHON_UNUSED Py
  *                    &conn_dims[0], &nhood_data[0], &nhood_dims[0], &tmpWeight[0], &nPairPerEdge[0],
  *                    &pre_ve[0], &pre_prodDims[0], &pre_nHood[0], 1, weight_opt);             # <<<<<<<<<<<<<<
  *     # add negative weight
- *     if np.count_nonzero(np.unique(segTrue)) > 1:
+ *     if np.count_nonzero(np.unique(segTrue)) > 1: # at least two segments
  */
   __pyx_t_20 = 0;
   __pyx_t_6 = -1;
@@ -3129,7 +3129,7 @@ static PyObject *__pyx_pf_10malis_core_2malis_loss_weights_both(CYTHON_UNUSED Py
   /* "malis_core.pyx":69
  *                    &pre_ve[0], &pre_prodDims[0], &pre_nHood[0], 1, weight_opt);
  *     # add negative weight
- *     if np.count_nonzero(np.unique(segTrue)) > 1:             # <<<<<<<<<<<<<<
+ *     if np.count_nonzero(np.unique(segTrue)) > 1: # at least two segments             # <<<<<<<<<<<<<<
  *         tmpWeight = np.ascontiguousarray(np.maximum(edgeWeight,gtWeight))
  *         malis_loss_weights_cpp_both(&segTrue[0],
  */
@@ -3240,7 +3240,7 @@ static PyObject *__pyx_pf_10malis_core_2malis_loss_weights_both(CYTHON_UNUSED Py
 
     /* "malis_core.pyx":70
  *     # add negative weight
- *     if np.count_nonzero(np.unique(segTrue)) > 1:
+ *     if np.count_nonzero(np.unique(segTrue)) > 1: # at least two segments
  *         tmpWeight = np.ascontiguousarray(np.maximum(edgeWeight,gtWeight))             # <<<<<<<<<<<<<<
  *         malis_loss_weights_cpp_both(&segTrue[0],
  *                    &conn_dims[0], &nhood_data[0], &nhood_dims[0], &tmpWeight[0], &nPairPerEdge[0],
@@ -3369,7 +3369,7 @@ static PyObject *__pyx_pf_10malis_core_2malis_loss_weights_both(CYTHON_UNUSED Py
     __pyx_t_12 = 0;
 
     /* "malis_core.pyx":71
- *     if np.count_nonzero(np.unique(segTrue)) > 1:
+ *     if np.count_nonzero(np.unique(segTrue)) > 1: # at least two segments
  *         tmpWeight = np.ascontiguousarray(np.maximum(edgeWeight,gtWeight))
  *         malis_loss_weights_cpp_both(&segTrue[0],             # <<<<<<<<<<<<<<
  *                    &conn_dims[0], &nhood_data[0], &nhood_dims[0], &tmpWeight[0], &nPairPerEdge[0],
@@ -3483,7 +3483,7 @@ static PyObject *__pyx_pf_10malis_core_2malis_loss_weights_both(CYTHON_UNUSED Py
     }
 
     /* "malis_core.pyx":71
- *     if np.count_nonzero(np.unique(segTrue)) > 1:
+ *     if np.count_nonzero(np.unique(segTrue)) > 1: # at least two segments
  *         tmpWeight = np.ascontiguousarray(np.maximum(edgeWeight,gtWeight))
  *         malis_loss_weights_cpp_both(&segTrue[0],             # <<<<<<<<<<<<<<
  *                    &conn_dims[0], &nhood_data[0], &nhood_dims[0], &tmpWeight[0], &nPairPerEdge[0],
@@ -3494,7 +3494,7 @@ static PyObject *__pyx_pf_10malis_core_2malis_loss_weights_both(CYTHON_UNUSED Py
     /* "malis_core.pyx":69
  *                    &pre_ve[0], &pre_prodDims[0], &pre_nHood[0], 1, weight_opt);
  *     # add negative weight
- *     if np.count_nonzero(np.unique(segTrue)) > 1:             # <<<<<<<<<<<<<<
+ *     if np.count_nonzero(np.unique(segTrue)) > 1: # at least two segments             # <<<<<<<<<<<<<<
  *         tmpWeight = np.ascontiguousarray(np.maximum(edgeWeight,gtWeight))
  *         malis_loss_weights_cpp_both(&segTrue[0],
  */

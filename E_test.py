@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 from T_model import unet3D
-from T_util import load_checkpoint,weightedMSE_np,malisWeight,labelWeight
+from T_util import load_checkpoint,weightedMSE_np,malisWeight,labelWeight,writeh5
 from T_data import VolumeDatasetTest, np_collate
 import malis_core
 
@@ -26,6 +26,8 @@ def get_args():
                         help='snapshot path')
     parser.add_argument('-dn','--data-name',  default='im_uint8.h5',
                         help='image data name')
+    parser.add_argument('-dnd','--data-dataset-name',  default='main',
+                        help='dataset name in data')
     parser.add_argument('-o','--output', default='result/my-pred.h5',
                         help='output path')
     parser.add_argument('-ln','--label-name',  default='seg-groundtruth2-malis_crop.h5',
@@ -36,6 +38,12 @@ def get_args():
     # model option
     parser.add_argument('-a','--opt-arch', type=str,  default='0-0@0@0-0-0@0',
                         help='model type')
+    parser.add_argument('-mp','--opt-param', type=str,  default='0@0@0@0',
+                        help='model param')
+    parser.add_argument('-mi','--model-input', type=str,  default='31,204,204',
+                        help='model input size')
+    parser.add_argument('-mo','--model-output', type=str,  default='3,116,116',
+                        help='model input size')
     parser.add_argument('-f', '--num-filter', default='24,72,216,648',
                         help='number of filters per layer')
     parser.add_argument('-ps', '--pad-size', type=int, default=0,
@@ -59,28 +67,35 @@ def get_args():
     return args
 
 def get_data(args):
-    if args.pad_size==0:                                                                            
-        model_io_size = np.array(((31,204,204), (3,116,116)));                                      
-        aff_suf='';                                                                                 
-    elif args.pad_size==1:                                                                          
-        model_io_size = np.array(((18,224,224), (18,224,224)));                                     
-        aff_suf='2';
-
+    from T_util import cropCentral
+    suf_aff = '_aff'+args.opt_param
+    model_io_size = np.array([[int(x) for x in args.model_input.split(',')],
+                              [int(x) for x in args.model_output.split(',')]])
     if args.task_opt==0:
-        test_data =  np.array(h5py.File(args.input+args.data_name,'r')['main'],dtype=np.float32)[None,:]/(2.**8)
+        test_data =  np.array(h5py.File(args.input+args.data_name,'r')[args.data_dataset_name],dtype=np.float32)[None,:]/(2.**8)
         out_data_size = model_io_size[0]
     elif args.task_opt in [1,2]: # load test prediction 
-        test_data =  np.array(h5py.File(args.output,'r')['main'],dtype=np.float32)
+        test_data =  np.array(h5py.File(args.output,'r')[args.data_dataset_name],dtype=np.float32)
         out_data_size = model_io_size[1]
     
     nhood = None
     test_label = None
+    extra_pad = 1
     if args.task_opt in [1,2]: # do evaluation
-        test_label = np.array(h5py.File(args.input+args.label_name[:-3]+'_aff'+aff_suf+'.h5','r')['main'])
+        extra_pad = 0
+        if os.path.exists(args.input+args.label_name[:-3]+suf_aff+'.h5'):
+            test_label = np.array(h5py.File(args.input+args.label_name[:-3]+suf_aff+'.h5','r')['main'])
+        else: # pre-compute for faster i/o
+            d_seg = np.array(h5py.File(args.input+args.label_name,'r')[args.label_dataset_name])
+            d_nhood = malis_core.mknhood3d()
+            test_label = malis_core.seg_to_affgraph(d_seg,d_nhood)
+            from T_util import writeh5
+            writeh5(args.input+args.label_name[:-3]+suf_aff+'.h5', 'main', test_label)
+        test_data, test_label = cropCentral(test_data, test_label, [0,0,0], False)
         if args.loss_opt==1: # evaluate malis: need segmentation
             nhood = malis_core.mknhood3d()
-    test_dataset = VolumeDatasetTest([test_data], [test_label], nhood, data_size=[test_data.shape[1:]],sample_stride=model_io_size[1],
-                    out_data_size=out_data_size,out_label_size=model_io_size[1])
+    test_dataset = VolumeDatasetTest([test_data], [test_label], nhood, sample_stride=model_io_size[1],
+            extra_pad=extra_pad, out_data_size=out_data_size, out_label_size=model_io_size[1])
 
     test_loader =  torch.utils.data.DataLoader(
             test_dataset, batch_size= args.batch_size, shuffle=False, collate_fn = np_collate,
@@ -89,7 +104,7 @@ def get_data(args):
     # pre-allocate torch cuda tensor
     test_var = Variable(torch.zeros(args.batch_size, 1, 31, 204, 204).cuda(), requires_grad=False)
     output_size = [3]+list(test_data.shape[1:]-(model_io_size[0]-model_io_size[1]))
-    return test_loader, test_var, output_size, model_io_size, test_dataset.sample_size
+    return test_loader, test_var, output_size, model_io_size, test_dataset.sample_size[0]
 
 def get_model(args):
     # create model
@@ -179,10 +194,10 @@ def main():
                 elif args.loss_opt == 1: # malis
                     ww = loss_w.getWeight(data[0], data[1], data[2])
                 for j in range(data[0].shape[0]):
-                    pp2 = [int(np.ceil(float(data[3][j][x])/model_io_size[1][x])) for x in range(3)]
+                    pp2 = [int(np.ceil(float(data[3][j][1+x])/model_io_size[1][x])) for x in range(3)]
+                    print pp2
                     pred[pp2[0], pp2[1], pp2[2]] = weightedMSE_np(data[0][j], data[1][j], ww[j])
-            import pickle
-            pickle.dump(pred,open(args.output.replace('.h5','_err.pkl'), 'wb'))
+            writeh5(args.output.replace('.h5','_err.h5'), 'main', pred)
 
 if __name__ == "__main__":
     main()

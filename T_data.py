@@ -12,7 +12,7 @@ def np_collate(batch):
 class VolumeDataset(torch.utils.data.Dataset):
     def __init__(self,
                  data, label=None, nhood = None,
-                 data_size = [(0,0,0)],
+                 extra_pad = 1,
                  zoom_range = None, #((0.8,1.2),(0.8,1.2),(0.8,1.2))
                  shift_range = None, #(0,0,0)
                  reflect = None, #(0,0,0),
@@ -27,10 +27,11 @@ class VolumeDataset(torch.utils.data.Dataset):
         self.data = data
         self.label = label
         self.nhood = nhood
+        self.extra_pad = extra_pad
         # samples, channels, depths, rows, cols
-        self.data_size = [np.array(x) for x in data_size] # volume size
-        self.out_data_size = np.array(out_data_size) # volume size
-        self.out_label_size = np.array(out_label_size) # volume size
+        self.data_size = [np.array(x.shape[1:]) for x in data] # volume size
+        self.out_data_size = np.array(out_data_size) # model input size
+        self.out_label_size = np.array(out_label_size) # model output size
         self.shift_range = shift_range # shift noise
         self.zoom_range = zoom_range # zoom range
         self.reflect = reflect # reflection
@@ -102,14 +103,14 @@ class VolumeDataset(torch.utils.data.Dataset):
         if self.label is not None and self.label[0] is not None:
             # pad one on the left, for possible reflection
             # assume label is the same size as data
-            out_label = self.label[pos[0]][:,1+pos[1]:1+pos[1]+self.out_label_size[0],
-                                   1+pos[2]:1+pos[2]+self.out_label_size[1],
-                                   1+pos[3]:1+pos[3]+self.out_label_size[2]].copy().astype(np.float32)
+            out_label = self.label[pos[0]][:,self.extra_pad+pos[1]:self.extra_pad+pos[1]+self.out_label_size[0],
+                                   self.extra_pad+pos[2]:self.extra_pad+pos[2]+self.out_label_size[1],
+                                   self.extra_pad+pos[3]:self.extra_pad+pos[3]+self.out_label_size[2]].copy().astype(np.float32)
             if do_reflect is not None and any(do_reflect):
                 st = np.ones((3,3),dtype=int)
-                tmp_label = self.label[pos[0]][:,pos[1]:2+pos[1]+self.out_label_size[0],
-                                       pos[2]:2+pos[2]+self.out_label_size[1],
-                                       pos[3]:2+pos[3]+self.out_label_size[2]].copy().astype(np.float32)
+                tmp_label = self.label[pos[0]][:,self.extra_pad-1+pos[1]:self.extra_pad+1+pos[1]+self.out_label_size[0],
+                                       self.extra_pad-1+pos[2]:self.extra_pad+1+pos[2]+self.out_label_size[1],
+                                       self.extra_pad-1+pos[3]:self.extra_pad+1+pos[3]+self.out_label_size[2]].copy().astype(np.float32)
                 if do_reflect[0]:
                     tmp_label = tmp_label[:,::-1,:,:]
                     st[0,0] -= 1

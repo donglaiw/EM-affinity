@@ -7,9 +7,12 @@ from skimage.color import label2rgb
 
 
 def visSlice(imN,ratio=(1,1), outN=None, frame_id=0, order=0):
-    ds = h5py.File(imN)
-    data = np.array(ds[ds.keys()[0]])
-    ds.close()
+    if isinstance(imN, basestring): 
+        ds = h5py.File(imN)
+        data = np.array(ds[ds.keys()[0]])
+        ds.close()
+    else:
+        data = np.squeeze(imN.copy())
     if len(data.shape)==4:
         data = data[1]
     if data.max()<=1.0001:
@@ -32,6 +35,9 @@ def visSliceSeg(imN, segN, ratio=[1,1,1], offset=[14,44,44],outN=None, frame_id=
         seg = seg[0][frame_id]
     else:
         seg = seg[frame_id]
+    if offset[1]<0:
+        seg = seg[-offset[1]:offset[1], -offset[2]:offset[2]]
+
     if len(ratio) == seg.ndim:
         seg = zoom( seg, ratio, order=0) # nearest neighbor: no artifact
     else:
@@ -45,14 +51,15 @@ def visSliceSeg(imN, segN, ratio=[1,1,1], offset=[14,44,44],outN=None, frame_id=
         if len(im.shape)==5:# BxCxDxWxH
             im = im[0,:,frame_id+offset[0]]
         elif len(im.shape)==4:# affinity/batch
-            im = im[0][frame_id+offset[0]]
+            im = im[0][frame_id+offset[0]:frame_id+offset[0]+1]
         else:
             im = im[frame_id+offset[0]:frame_id+offset[0]+1]
-        if offset[1]!=0:
+        if offset[1]>0:
             im = im[:,offset[1]:-offset[1], offset[2]:-offset[2]]
         if im.max()<=1.0001:
             im = (im*255)
-        im = zoom( im, ratio, order=1) # nearest neighbor: no artifact
+        print im.shape
+        im = zoom( im, ratio, order=1) # bilinear
         if im.shape[0]==1:
             im = np.tile(im,(3,1,1))
         im0 = np.uint8(np.transpose(im,(2,1,0)))

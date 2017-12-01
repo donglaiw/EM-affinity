@@ -10,6 +10,7 @@ from T_model import unet3D
 from T_util import save_checkpoint,load_checkpoint,decay_lr,weightedMSE,malisWeight,labelWeight
 from T_data import VolumeDatasetTrain, VolumeDatasetTest, np_collate
 import malis_core
+#from T_vis import visSliceSeg, visSlice
 
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
@@ -32,8 +33,14 @@ def get_args():
                         help='pre-train snapshot path')
 
     # model option
-    parser.add_argument('-a','--opt-arch', type=str,  default='0-0@0@0-0-0@0',
+    parser.add_argument('-ma','--opt-arch', type=str,  default='0-0@0@0-0-0@0',
                         help='model type')
+    parser.add_argument('-mp','--opt-param', type=str,  default='0@0@0@0',
+                        help='model param')
+    parser.add_argument('-mi','--model-input', type=str,  default='31,204,204',
+                        help='model input size')
+    parser.add_argument('-mo','--model-output', type=str,  default='3,116,116',
+                        help='model input size')
     parser.add_argument('-f', '--num-filter', default='24,72,216,648',
                         help='number of filters per layer')
     parser.add_argument('-ps', '--pad-size', type=int, default=0,
@@ -85,10 +92,8 @@ def init(args):
     sn = args.output+'/'
     if not os.path.isdir(sn):
         os.makedirs(sn)
-    if args.pad_size==0:
-        model_io_size = np.array(((31,204,204), (3,116,116)));
-    elif args.pad_size==1:
-        model_io_size = np.array(((18,224,224), (18,224,224)));
+    model_io_size = np.array([[int(x) for x in args.model_input.split(',')],
+                              [int(x) for x in args.model_output.split(',')]])
 
     # pre-allocate torch cuda tensor for malis loss
     # input data
@@ -114,7 +119,7 @@ def get_data(args, model_io_size, opt='train'):
     # 1. load data
     d_data = [None]*len(dirName)
     d_label = [None]*len(dirName)
-    suf_aff = '_aff'+str(args.pad_size)
+    suf_aff = '_aff'+args.opt_param
     model_io_offset = (model_io_size[0]-model_io_size[1])/2
     d_nhood = malis_core.mknhood3d()
     nhood = None if args.loss_opt in [0] else d_nhood
@@ -151,7 +156,7 @@ def get_data(args, model_io_size, opt='train'):
     else:
         color_scale=None; color_shift=None; color_clip=None; rot=[(0,0,0),False]
 
-    dataset = VolumeDatasetTrain(d_data, d_label, d_nhood, data_size=[x.shape[1:] for x in d_data],
+    dataset = VolumeDatasetTrain(d_data, d_label, d_nhood,
                            reflect=rot[0], swapxy=rot[1],
                            color_scale=color_scale,color_shift=color_shift,clip=color_clip,
                            out_data_size=model_io_size[0],out_label_size=model_io_size[1])
@@ -164,7 +169,8 @@ def get_data(args, model_io_size, opt='train'):
 def get_model(args, model_io_size):
     num_filter = [int(x) for x in args.num_filter.split(',')]
     opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
-    model = unet3D(filters=num_filter,opt_arch = opt_arch,
+    opt_param = [[int(x) for x in y.split('-')] for y in  args.opt_param.split('@')]
+    model = unet3D(filters=num_filter, opt_arch = opt_arch, opt_param = opt_param,
                    has_BN = args.has_BN==1, has_dropout = args.has_dropout, relu_slope = args.relu_slope,
                    pad_size = args.pad_size, pad_type= args.pad_type)
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu))
@@ -232,7 +238,7 @@ def main():
 
     print '1. setup data'
     train_loader = get_data(args, model_io_size, 'train')
-    test_loader = get_data(args, model_io_size,'val')
+    test_loader = get_data(args, model_io_size, 'val')
 
     print '2. setup model'
     model, loss_w, pre_epoch, logger = get_model(args, model_io_size)
@@ -247,31 +253,32 @@ def main():
         model.train()
 
     # Normalize learning rate
-    args.lr = args.lr * args.batch_size / 2
-    train_iter = train_loader.__iter__()
+    # args.lr = args.lr * args.batch_size / 2
     test_iter = test_loader.__iter__() if test_loader is not None else None
     test_loss = 0
-
-    from T_vis import visSliceSeg
-    for iter_id, data in enumerate(train_iter):
+    volume_id = pre_epoch
+    for iter_id, data in enumerate(train_loader):
         optimizer.zero_grad()
-        volume_id = (iter_id + 1) * args.batch_size + pre_epoch
+        volume_id += args.batch_size
 
         # copy data
         t1 = time.time()
 
-        # Forward
-        t2 = time.time()
-
         # Training error
         #visSliceSeg(data[0], data[2], offset=[14,44,44],outN='result/db/train_'+str(iter_id)+'_'+str(data[3][0][0])+'.png', frame_id=0)
+        #visSliceSeg(data[0], data[2], offset=[6,14,14],outN='result/db/train_'+str(iter_id)+'_'+str(data[3][0][0])+'.png', frame_id=0)
+        #visSlice(data[0][0,0],outN='result/db/train_im.png',frame_id=6)
         pre_vars[0].data.copy_(torch.from_numpy(data[0]))
         train_loss = forward(model, data, pre_vars, loss_w, args)
+
+        # Forward
+        t2 = time.time()
         # Backward
         if args.lr > 0:
             train_loss.backward()
             optimizer.step()
 
+        t3 = time.time()
         # Validation error
         if test_iter is not None and iter_id % 5 == 0:
             test_data = next(test_iter)
@@ -280,20 +287,18 @@ def main():
             test_loss = forward(model, test_data, pre_vars, loss_w, args).data[0]
 
         # Print log
-        t3 = time.time()
         logger.write("[Volume %d] train_loss=%0.3f test_loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (volume_id,train_loss.data[0],test_loss,optimizer.param_groups[0]['lr'],t3-t2,t3-t1))
 
         # Save progress
-        if volume_id*args.batch_size % args.volume_save <args.batch_size or volume_id >= args.volume_total:
-            save_checkpoint(model, args.output+('/volume_%d.pth' % (pre_epoch + volume_id)), optimizer, volume_id)
-
+        if volume_id % args.volume_save <args.batch_size or volume_id >= args.volume_total:
+            save_checkpoint(model, args.output+('/volume_%d.pth' % (volume_id)), optimizer, volume_id)
         # Terminate
         if volume_id >= args.volume_total:
             break
 
         # LR update
         if args.lr > 0:
-            decay_lr(optimizer, args.lr, pre_epoch+volume_id, lr_decay[0], lr_decay[1], lr_decay[2])
+            decay_lr(optimizer, args.lr, volume_id, lr_decay[0], lr_decay[1], lr_decay[2])
     logger.close()
 
 if __name__ == "__main__":

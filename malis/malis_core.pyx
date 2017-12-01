@@ -66,7 +66,7 @@ def malis_loss_weights_both(np.ndarray[uint64_t, ndim=1] segTrue,
                    &conn_dims[0], &nhood_data[0], &nhood_dims[0], &tmpWeight[0], &nPairPerEdge[0],
                    &pre_ve[0], &pre_prodDims[0], &pre_nHood[0], 1, weight_opt);
     # add negative weight
-    if np.count_nonzero(np.unique(segTrue)) > 1:
+    if np.count_nonzero(np.unique(segTrue)) > 1: # at least two segments
         tmpWeight = np.ascontiguousarray(np.maximum(edgeWeight,gtWeight))
         malis_loss_weights_cpp_both(&segTrue[0],
                    &conn_dims[0], &nhood_data[0], &nhood_dims[0], &tmpWeight[0], &nPairPerEdge[0],
