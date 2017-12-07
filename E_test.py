@@ -20,6 +20,8 @@ def get_args():
     parser.add_argument('-lw','--loss-weight-opt', type=float, default=2.0,                         
                         help='weighted loss type') 
 # I/O
+    parser.add_argument('-dc','--data-color-opt', type=int,  default=2,
+                        help='data color aug type')
     parser.add_argument('-i','--input',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/',
                         help='input path')
     parser.add_argument('-s','--snapshot',  default='/n/coxfs01/donglai/malis_trans/pytorch_train/w0921/16_8_1e-3_bnL2/iter_16_11499_0.001.pth',
@@ -72,12 +74,15 @@ def get_data(args):
     model_io_size = np.array([[int(x) for x in args.model_input.split(',')],
                               [int(x) for x in args.model_output.split(',')]])
     if args.task_opt==0:
-        test_data =  np.array(h5py.File(args.input+args.data_name,'r')[args.data_dataset_name],dtype=np.float32)[None,:]/(2.**8)
+        test_data =  np.array(h5py.File(args.input+args.data_name,'r')[args.data_dataset_name],dtype=np.float32)[None,:]
+        if test_data.max()>10:
+            test_data=test_data/(2.**8)
         out_data_size = model_io_size[0]
     elif args.task_opt in [1,2]: # load test prediction 
         test_data =  np.array(h5py.File(args.output,'r')[args.data_dataset_name],dtype=np.float32)
         out_data_size = model_io_size[1]
-    
+    color_clip = [(0.05,0.95), (0.05,0.95), None][args.data_color_opt]
+
     nhood = None
     test_label = None
     extra_pad = 1
@@ -94,7 +99,8 @@ def get_data(args):
         test_data, test_label = cropCentral(test_data, test_label, [0,0,0], False)
         if args.loss_opt==1: # evaluate malis: need segmentation
             nhood = malis_core.mknhood3d()
-    test_dataset = VolumeDatasetTest([test_data], [test_label], nhood, sample_stride=model_io_size[1],
+    test_dataset = VolumeDatasetTest([test_data], [test_label], nhood,
+            clip=color_clip, sample_stride=model_io_size[1],
             extra_pad=extra_pad, out_data_size=out_data_size, out_label_size=model_io_size[1])
 
     test_loader =  torch.utils.data.DataLoader(
@@ -102,7 +108,7 @@ def get_data(args):
             num_workers= args.num_cpu, pin_memory=True)
     
     # pre-allocate torch cuda tensor
-    test_var = Variable(torch.zeros(args.batch_size, 1, 31, 204, 204).cuda(), requires_grad=False)
+    test_var = Variable(torch.zeros(args.batch_size, 1, model_io_size[0][0], model_io_size[0][1], model_io_size[0][2]).cuda(), requires_grad=False)
     output_size = [3]+list(test_data.shape[1:]-(model_io_size[0]-model_io_size[1]))
     return test_loader, test_var, output_size, model_io_size, test_dataset.sample_size[0]
 
@@ -111,7 +117,8 @@ def get_model(args):
     num_filter = [int(x) for x in args.num_filter.split(',')]
 
     opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
-    model = unet3D(filters=num_filter,opt_arch = opt_arch,
+    opt_param = [[int(x) for x in y.split('-')] for y in  args.opt_param.split('@')]
+    model = unet3D(filters=num_filter,opt_arch = opt_arch, opt_param = opt_param,
                    has_BN = args.has_BN==1, has_dropout = args.has_dropout,
                    pad_size = args.pad_size, pad_type= args.pad_type)
     model.cuda()
@@ -131,7 +138,7 @@ def main():
     
     if not os.path.exists(args.output):
         if not os.path.exists(args.snapshot):
-            raise IOException(args.snapshot+" doesn't exist for prediction")
+            raise ValueError(args.snapshot+" doesn't exist for prediction")
         else:
             print '-- start prediction --'
             print '2. load model'
@@ -143,6 +150,7 @@ def main():
             num_batch = test_loader.__len__()
             pred = np.zeros(output_size,dtype=np.float32)
             for batch_id, data in enumerate(test_loader):
+                # print batch_id,data[0].min(),data[0].max()
                 test_var.data[:data[0].shape[0]].copy_(torch.from_numpy(data[0]))
                 # forward-backward
                 y_pred = model(test_var).data.cpu().numpy()

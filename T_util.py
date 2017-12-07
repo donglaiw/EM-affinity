@@ -134,6 +134,39 @@ def caffe2pkl(mn,wn,outN=None):
     else:
         import pickle
         pickle.dump(net,open(outN,'wb'))
+
+def pth2pkl(mn,outN=None):
+    import torch
+    net0 = torch.load(mn)
+    net={}
+    cc=1
+    bn=1
+    ks= net0['state_dict'].keys()
+    for k in ks:
+        if 'cbrd.0.weight' in k and 'up.0.weight' not in k: #no deconv
+            layer={}
+            print cc,k
+            layer['w']=net0['state_dict'][k].cpu().numpy()
+            kk=k.replace('weight','bias')
+            if kk in ks:
+                layer['b']=net0['state_dict'][kk].cpu().numpy()
+            net['Convolution'+str(cc)]=layer
+            cc+=1
+        elif 'cbrd.1.running_mean' in k: #batchnorm
+            layer={}
+            print bn,k
+            layer['w0']=net0['state_dict'][k.replace('running_mean','weight')].cpu().numpy()
+            layer['w1']=net0['state_dict'][k.replace('running_mean','bias')].cpu().numpy()
+            layer['w2']=net0['state_dict'][k].cpu().numpy()
+            layer['w3']=net0['state_dict'][k.replace('running_mean','running_var')].cpu().numpy()
+            net['BatchNorm'+str(bn)]=layer
+            bn+=1
+    if outN is None:
+        return net
+    else:
+        import pickle
+        pickle.dump(net,open(outN,'wb'))
+
 def weight_filler(ksizes, opt_scale=2.0, opt_norm=2):
     kk=0
     if opt_norm==0:# n_in

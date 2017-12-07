@@ -5,7 +5,7 @@ import argparse
 # python E_translate.py -op 1 -o ../../malis_trans/unet3d/net_weight_24_150k -f 24,72,216,648
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
-    parser.add_argument('-op','--opt', type=int,  default=0,
+    parser.add_argument('-op','--opt', type=float,  default=0,
                         help='caffe->pkl')
 
     parser.add_argument('-cp','--caffe-prototxt', type=str,  default='../../malis_trans/unet3d/net_deploy_big20.prototxt',
@@ -15,6 +15,8 @@ def get_args():
     parser.add_argument('-bn', '--has-BN', type=int, default=0,
                         help='use BatchNorm')
     parser.add_argument('-km','--keras-model', type=str,  default='/n/coxfs01/fgonda/experiments/3d/ecs-3d/affinity_20_3/net_iter_10000.caffemodel',
+                        help='caffe model')
+    parser.add_argument('-pm','--pth-model', type=str,  default='',
                         help='caffe model')
     parser.add_argument('-o','--output', type=str,  default='../../malis_trans/unet3d/net_weight_10k',
                         help='caffe output')
@@ -32,6 +34,9 @@ def main():
     elif args.opt==0.1: 
         from T_util import keras2pkl
         keras2pkl(args.keras_model, args.output+'.pkl')
+    elif args.opt==0.2: 
+        from T_util import pth2pkl
+        pth2pkl(args.pth_model, args.output+'.pkl')
     elif args.opt==1: 
         import pickle
         from T_util import load_weights_pkl,save_checkpoint
