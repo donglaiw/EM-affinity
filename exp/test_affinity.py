@@ -181,6 +181,7 @@ def main():
                 # prediction 
                 num_b = data[3].shape[0]
                 test_var.data[:num_b].copy_(torch.from_numpy(data[0][:num_b]))
+                import pdb; pdb.set_trace()
                 y_pred = model(test_var).data.cpu().numpy()
 
                 # put into pred

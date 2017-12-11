@@ -22,9 +22,9 @@
         n1=50000;n2=150k;DD=Dec17_vol1-3_vol4_malis_iter3_half_bn_b6/;i=1;CUDA_VISIBLE_DEVICES=0 python exp/test_affinity.py -s result/${DD}/volume_${n1}.pth -b 3 -g 1 -c 1 -o result/${DD}/vol${i}-${n2}-pred.h5 -i ../../data/JWR/vol${i}/ -dn im_uint8_half.h5 -bn 1;
         ```
     - Model quantization
-        * quantization
+        * quantization (single-GPU, nn.DataParallel won't update correctly)
         ```
-        DD=/n/coxfs01/donglai/micron100_1217/model/Toufiq/;Do=result/quant_m1/;n1=net_iter_100000_m1; python exp/quant.py -s ${DD}${n1}.pth -i ../../data/JWR/vol1/@../../data/JWR/vol3/ -dn im_uint8_half.h5 -b 10 -g 10 -nb 1000 -o ${Do}${n1} -qm linear
+        DD=/n/coxfs01/donglai/micron100_1217/model/Toufiq/;Do=result/quant_m1/;n1=net_iter_100000_m1; python exp/quant.py -s ${DD}${n1}.pth -i ../../data/JWR/vol1/@../../data/JWR/vol3/ -dn im_uint8_half.h5 -b 3 -g 1 -nb 1000 -o ${Do}${n1} -qm linear
         ```
         * prediction
         ```
@@ -49,5 +49,7 @@
 ## Reference:
 1. Malis loss: [[cython code]](https://github.com/TuragaLab/malis), [[caffe code]](https://github.com/naibaf7/caffe/blob/master/src/caffe/layers/malis_loss_layer.cpp)
 2. Unet-3D: [[pytorch code]](https://github.com/meetshah1995/pytorch-semseg/blob/master/ptsemseg/models/unet.py)
+    - [[residual
+      module]](https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py), [[inception module]](https://github.com/pytorch/vision/blob/master/torchvision/models/inception.py)
 3. Channel pruning: [[pytorch code]](https://github.com/jacobgil/pytorch-pruning/prune.py)
 4. Model quantization: [[pytorch code]](https://github.com/aaron-xichen/pytorch-playground/blob/master/utee/quant.py)

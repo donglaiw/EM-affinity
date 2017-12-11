@@ -98,6 +98,11 @@ def main():
             break
 
     # 5. save model
+    #import pdb; pdb.set_trace()
+    # model._modules['final']._modules['0_linear_quant'].counter
+    # model.module._modules['final']._modules['0_linear_quant'].counter
+    # model.modules._modules['final']._modules['0_linear_quant'].counter
+    # model.module._modules['module'].final._modules['0_linear_quant'].counter
     torch.save(model, args.output+'.pth')
 
 if __name__ == "__main__":
