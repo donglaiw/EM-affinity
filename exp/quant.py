@@ -58,8 +58,10 @@ def get_args():
     args.sample_stride = '1@1@1'
     args.task_opt = 0.1 # random shuffle
     args.data_color_opt = 2 # no aug 
-    if args.output == '':
-        args.output = args.snapshot[:-4]+'_p'+str(args.param_bits)+'_'+args.quant_method+'_v'+str(args.batch_num*args.batch_size)
+    if len(args.output)<4 or args.output[-4:] != '.pth':
+        if args.output == '':
+            args.output = args.snapshot[:-4]
+        args.output += '_p'+str(args.param_bits)+'_'+args.quant_method+'_v'+str(args.batch_num*args.batch_size)
     return args
 
 def get_model(args, state_dict):
@@ -88,7 +90,7 @@ def main():
     test_var = Variable(torch.zeros(args.batch_size, 1, model_io_size[0][0], model_io_size[0][1], model_io_size[0][2]).cuda(), requires_grad=False)
 
     for batch_id, data in enumerate(test_loader):
-        if batch_id % 100 ==0:
+        if batch_id % 10 ==0:
             print 'process batch [%d/%d]' % (batch_id, args.batch_num)
         test_var.data.copy_(torch.from_numpy(data[0]))
         y_pred = model(test_var)
