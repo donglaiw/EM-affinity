@@ -48,6 +48,6 @@
 
 ## Reference:
 1. Malis loss: [[cython code]](https://github.com/TuragaLab/malis), [[caffe code]](https://github.com/naibaf7/caffe/blob/master/src/caffe/layers/malis_loss_layer.cpp)
-2. Unet-3D [pytorch code](https://github.com/meetshah1995/pytorch-semseg/blob/master/ptsemseg/models/unet.py)
-3. Channel pruning [pytorch code](https://github.com/jacobgil/pytorch-pruning/prune.py)
-4. Model quantization [pytorch code](https://github.com/aaron-xichen/pytorch-playground/blob/master/utee/quant.py)
+2. Unet-3D: [[pytorch code]](https://github.com/meetshah1995/pytorch-semseg/blob/master/ptsemseg/models/unet.py)
+3. Channel pruning: [[pytorch code]](https://github.com/jacobgil/pytorch-pruning/prune.py)
+4. Model quantization: [[pytorch code]](https://github.com/aaron-xichen/pytorch-playground/blob/master/utee/quant.py)
