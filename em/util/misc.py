@@ -2,6 +2,10 @@ import sys
 import numpy as np
 from ..lib import malis_core as malisL
 import h5py
+import random
+import os
+
+from subprocess import check_output
 
 # 1. h5 i/o
 def readh5(filename, datasetname):
@@ -48,6 +52,10 @@ def resizeh5(path_in, path_out, dataset, ratio=(0.5,0.5), interp=2, offset=[0,0,
     h5py.File( path_out, 'w').create_dataset( dataset, data=im_out )
 
 
+def writetxt(filename, dtarray):
+    a = open(filename,'w')
+    a.write(dtarray)
+    a.close()
 # 2. segmentation wrapper
 def segToAffinity(seg):
     nhood = malisL.mknhood3d()
@@ -82,3 +90,24 @@ def genSegMalis(gg3,iter_num): # given input seg map, widen the seg border
     out[gg3gd==1]=0
     #out[0,:,:]=0 # for malis
     return out
+
+# 3. evaluation
+def runBash(cmd):
+    fn = '/tmp/tmp_'+str(random.random())[2:]+'.sh'
+    print 'tmp bash file:',fn
+    writetxt(fn, cmd)
+    os.chmod(fn,0755)
+    out = check_output([fn])
+    os.remove(fn)
+    print out
+
+def pred_reorder(input_file, input_dataset, output_folder=None):
+    if output_folder is None:
+        output_folder = input_file[:input_file.rfind('/')]
+    filename = input_file[input_file.rfind('/')+1:]
+    pred = readh5(input_file,input_dataset)
+    predt = np.transpose(pred, (1,2,3,0))
+    output_file = output_folder + filename[:-3]+'-zyxc.h5'
+    #output_file = input_file[:-3]+'-zyxc.h5'
+    writeh5(output_file,'stack',predt)
+

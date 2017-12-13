@@ -206,6 +206,6 @@ class unet3D_m1(nn.Module): # deployed model-1
             x = self.downS[i](down_u[i])
         x = self.center(x)
         for i in range(self.depth):
-             x = mergeCrop(down_u[self.depth-1-i], self.upS[i](x))
-             x = self.upC[i](x)
+            x = mergeCrop(down_u[self.depth-1-i], self.upS[i](x))
+            x = self.upC[i](x)
         return F.sigmoid(self.final(x))

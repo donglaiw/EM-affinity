@@ -52,13 +52,13 @@ def getData(dirName, data_name, data_dataset_name):
             d_data[i]=d_data[i]/(2.**8)
     return d_data
 
-def getLabel(dirName, seg_name, suf_aff, label_dataset_name):
+def getLabel(dirName, seg_name, suf_aff, seg_dataset_name):
     label_name = seg_name[:-3]+suf_aff+'.h5' if len(seg_name)>3 else ''
     d_label = [None]*len(dirName)
     for i in range(len(dirName)):
         # load whole aff -> remove offset for label, pad a bit for rotation augmentation
         if os.path.exists(dirName[i] + label_name):
-            d_label[i] = np.array(h5py.File(dirName[i] + label_name,'r')['main'])
+            d_label[i] = np.array(h5py.File(dirName[i] + label_name,'r')[seg_dataset_name])
         else: # pre-compute for faster i/o
             d_seg = np.array(h5py.File(dirName[i] + seg_name, 'r')[seg_dataset_name])
             d_label[i] = segToAffinity(d_seg)

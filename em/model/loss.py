@@ -21,7 +21,7 @@ class malisWeight():
     def getWeight(self, x_cpu, aff_cpu, seg_cpu):
         for i in range(x_cpu.shape[0]):
             self.weight[i] = malisL.malis_loss_weights_both(seg_cpu[i].flatten(), self.conn_dims, self.nhood_data, self.nhood_dims, self.pre_ve, self.pre_prodDims, self.pre_nHood, x_cpu[i].flatten(), aff_cpu[i].flatten(), self.opt_weight).reshape(self.conn_dims)
-        return self.weight
+        return self.weight[:x_cpu.shape[0]]
 
 
 # for L2 training: re-weight the error by label bias (far more 1 than 0)

@@ -11,6 +11,7 @@ from em.model.unet import unet3D
 from em.model.loss import weightedMSE_np, malisWeight, labelWeight
 from em.data.volumeData import VolumeDatasetTest, np_collate
 from em.data.io import getVar, getData, getLabel, getDataAug, cropCentralN, setPred
+from em.util.misc import writeh5, writetxt
 
 def get_args():
     parser = argparse.ArgumentParser(description='Testing Model')
@@ -21,7 +22,7 @@ def get_args():
                         help='task: 0=prediction, 1=evaluation, 2=evaluation-heatmap')
     parser.add_argument('-l','--loss-opt', type=int, default=0,
                         help='loss type') 
-    parser.add_argument('-lw','--loss-weight-opt', type=float, default=2.0,                         
+    parser.add_argument('-lw','--loss-weight-opt', type=float, default=2.0,
                         help='weighted loss type') 
     # I/O
     parser.add_argument('-dc','--data-color-opt', type=int,  default=2,
@@ -94,6 +95,7 @@ def get_data(args, model_io_size):
     do_shuffle = False # test in serial
     sample_stride = model_io_size[1] if args.sample_stride=='' else [int(x) for x in args.sample_stride.split('@')] # no overlap
     extra_pad = 0 # no need to pad
+    output_size = None
     if args.task_opt in [0,0.1]: 
         # load test data
         dirName = args.input.split('@')
@@ -117,7 +119,6 @@ def get_data(args, model_io_size):
         
         out_data_size = model_io_size[1]
         do_seg = args.loss_opt==1 # evaluate malis: need segmentation
-        output_size = test_dataset.sample_size
             
     color_scale, color_shift, color_clip, rot = getDataAug('test', args.data_color_opt)
 
@@ -129,6 +130,9 @@ def get_data(args, model_io_size):
             num_workers= args.num_cpu, pin_memory=True)
     
     batch_num = [np.ceil(x/float(args.batch_size)) for x in test_dataset.sample_num]
+
+    if output_size is None:
+        output_size = test_dataset.sample_size
     return test_loader, output_size, batch_num
 
 def get_model(args):
@@ -181,7 +185,6 @@ def main():
                 # prediction 
                 num_b = data[3].shape[0]
                 test_var.data[:num_b].copy_(torch.from_numpy(data[0][:num_b]))
-                import pdb; pdb.set_trace()
                 y_pred = model(test_var).data.cpu().numpy()
 
                 # put into pred
@@ -218,11 +221,12 @@ def main():
         elif args.loss_opt==1: # malis
             loss_w = malisWeight(conn_dims, args.loss_weight_opt) 
         print '3. start evaluation'
-        for did in range(len(sample_num)):
-            print 'test dataset: '+str(did)+'/'+str(len(sample_num))
-            num_batch = sample_num[did]
+        for did in range(len(batch_num)):
+            print 'test dataset: '+str(did)+'/'+str(len(batch_num))
+            num_batch = batch_num[did]
             loss=0;
             if args.task_opt==1: # avg test error
+                out = ''
                 for batch_id, data in enumerate(test_loader):
                     if args.loss_opt == 0: # L2
                         ww = loss_w.getWeight(data[1])
@@ -230,6 +234,8 @@ def main():
                         ww = loss_w.getWeight(data[0], data[1], data[2])
                     loss += weightedMSE_np(data[0], data[1], ww)
                     print '%d/%d: avg loss = %.5f' % (batch_id,num_batch,loss/(1+batch_id))
+                    out+='%d/%d: avg loss = %.5f' % (batch_id,num_batch,loss/(1+batch_id)) + '\n'
+                writetxt(args.output.replace('.h5','_err.txt'), out)
             elif args.task_opt==2: # heatmap test error
                 pred = np.zeros(output_size[did], dtype=np.float32)
                 for batch_id, data in enumerate(test_loader):

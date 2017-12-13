@@ -39,6 +39,7 @@ def log_minmax_quantize(input, bits):
     input0 = torch.log(torch.abs(input) + 1e-20)
     v = min_max_quantize(input0, bits)
     v = torch.exp(v) * s
+    del input0 # save memory
     return v
 
 def log_linear_quantize(input, sf, bits):
@@ -50,6 +51,7 @@ def log_linear_quantize(input, sf, bits):
     input0 = torch.log(torch.abs(input) + 1e-20)
     v = linear_quantize(input0, sf, bits)
     v = torch.exp(v) * s
+    del input0 # save memory
     return v
 
 def min_max_quantize(input, bits):
@@ -62,12 +64,14 @@ def min_max_quantize(input, bits):
         max_val = float(max_val.data.cpu().numpy()[0])
         min_val = float(min_val.data.cpu().numpy()[0])
 
-    input_rescale = (input - min_val) / (max_val - min_val)
-
-    n = math.pow(2.0, bits) - 1
-    v = torch.floor(input_rescale * n + 0.5) / n
-
-    v =  v * (max_val - min_val) + min_val
+    if max_val == min_val:
+        v = input # otherwise nan..
+    else:
+        input_rescale = (input - min_val) / (max_val - min_val)
+        n = math.pow(2.0, bits) - 1
+        v = torch.floor(input_rescale * n + 0.5) / n
+        v =  v * (max_val - min_val) + min_val
+        del input_rescale # save memory
     return v
 
 def tanh_quantize(input, bits):
@@ -81,6 +85,7 @@ def tanh_quantize(input, bits):
     v = 2 * v - 1 # [-1, 1]
 
     v = 0.5 * torch.log((1 + v) / (1 - v)) # arctanh
+    del input_rescale # save memory
     return v
 
 
@@ -170,7 +175,7 @@ def quantize_weight(state_dict, bits=8, do_bias=True, overflow_rate=0.0, quant_m
             sf = bits - 1. - compute_integral_part(v, overflow_rate=overflow_rate)
             v_quant  = linear_quantize(v, sf, bits=bits)
         elif quant_method == 'log':
-            v_quant = qog_minmax_quantize(v, bits=bits)
+            v_quant = log_minmax_quantize(v, bits=bits)
         elif quant_method == 'minmax':
             v_quant = min_max_quantize(v, bits=bits)
         else:
