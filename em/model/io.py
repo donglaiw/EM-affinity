@@ -63,6 +63,35 @@ def caffe2pkl(mn,wn,outN=None):
         import pickle
         pickle.dump(net,open(outN,'wb'))
 
+def pth2issac(net):
+    import isaac.pytorch
+    # now only supports: 
+    result = isaac.pytorch.UNet(out_num=net.io_num[1], 
+                filters=[net.io_num[0]]+net.filters,
+                relu_slope=net.relu_slope).cuda()
+
+    # Reorder indices because new state dict has upsample-upconv interleaved
+    depth = net.depth
+    ndown = 4*(depth + 1)
+    reorder = list(range(ndown))
+    for i in range(depth):
+        upsamples = list(range(ndown + i*3, ndown + i*3 + 3))
+        upconvs = list(range(ndown + depth*3 + i*4, ndown + depth*3 + i*4 + 4))
+        reorder +=  upsamples + upconvs
+    reorder += [ndown + 7*depth, ndown + 7*depth + 1]
+
+    # Copy in proper order
+    net_keys = list(net.state_dict().keys())
+    result_keys = list(result.state_dict().keys())
+    net_dict = net.state_dict()
+    result_dict = result.state_dict()
+    for i, j in enumerate(reorder):
+        result_dict[result_keys[i]] = net_dict[net_keys[j]].clone()
+    result.load_state_dict(result_dict)
+
+    return result
+
+
 def pth2pkl(mn,outN=None):
     import torch
     net0 = torch.load(mn)

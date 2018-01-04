@@ -6,8 +6,8 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 import os, sys; sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from em.model.io import load_checkpoint
-from em.model.unet import unet3D
+from em.model.io import load_checkpoint, pth2issac
+from em.model.unet import unet3D, unet3D_m1
 from em.model.loss import weightedMSE_np, malisWeight, labelWeight
 from em.data.volumeData import VolumeDatasetTest, np_collate
 from em.data.io import getVar, getData, getLabel, getDataAug, cropCentralN, setPred
@@ -63,6 +63,12 @@ def get_args():
                         help='use BatchNorm')
     parser.add_argument('-do', '--has-dropout', type=float, default=0,
                         help='use dropout')
+    parser.add_argument('-pok','--pool-kernel', type=str,  default='1,2,2',
+                        help='pool kernel')
+    parser.add_argument('-pos','--pool-stride', type=str,  default='1,2,2',
+                        help='pool stride')
+    parser.add_argument('-di','--do-issac', type=int,  default=0,
+                        help='using issac int8 quantization')
     # computation option
     parser.add_argument('-b','--batch-size', type=int,  default=16,
                         help='batch size')
@@ -135,21 +141,34 @@ def get_data(args, model_io_size):
         output_size = test_dataset.sample_size
     return test_loader, output_size, batch_num
 
-def get_model(args):
+def get_model(args, test_var):
     # create model
     if args.model_id == 0:
         num_filter = [int(x) for x in args.num_filter.split(',')]
         opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
         opt_param = [[int(x) for x in y.split('-')] for y in  args.opt_param.split('@')]
-        model = unet3D(filters=num_filter,opt_arch = opt_arch, opt_param = opt_param,
-                       has_BN = args.has_BN==1, has_dropout = args.has_dropout,
-                       pad_size = args.pad_size, pad_type= args.pad_type)
+        pool_kernel=tuple([int(x) for x in args.pool_kernel.split(',')])
+        pool_stride=tuple([int(x) for x in args.pool_stride.split(',')])
+        if args.do_issac==1:
+            model = unet3D_m1(filters=num_filter)
+        else:
+            model = unet3D(filters=num_filter,opt_arch = opt_arch, opt_param = opt_param,
+                           has_BN = args.has_BN==1, has_dropout = args.has_dropout,
+                           pool_kernel = pool_kernel, pool_stride = pool_stride,
+                           pad_size = args.pad_size, pad_type= args.pad_type)
         # load parameter
-        cp = load_checkpoint(args.snapshot, args.num_gpu)
+        cp = load_checkpoint(args.snapshot, 1)
         model.load_state_dict(cp['state_dict'])
-    elif args.model_id == 1:
+    elif args.model_id == 1:#load model directly
         model = torch.load(args.snapshot)
-    model.cuda()
+
+    if args.num_gpu>0:
+        model.cuda()
+        if args.do_issac==1:
+            # hack it for now 
+            test_var.data.copy_(torch.rand(test_var.data.size()))
+            model = pth2issac(model).fuse().quantize(test_var)
+
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
 
     return model
@@ -169,7 +188,7 @@ def main():
         else:
             print '-- start prediction --'
             print '2. load model'
-            model = get_model(args)
+            model = get_model(args, test_var)
 
             print '3. start testing'
             model.eval()

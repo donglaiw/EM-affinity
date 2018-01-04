@@ -100,6 +100,9 @@ class unet3D(nn.Module): # symmetric unet
                  pool_kernel=(1,2,2), pool_stride=(1,2,2)):
         super(unet3D, self).__init__()
         self.depth = len(filters)-1 
+        self.filters = filters 
+        self.io_num = [in_num, out_num]
+        self.relu_slope = relu_slope
         filters_in = [in_num] + filters[:-1]
         cfg_conv={'has_bias':has_bias,'has_BN':has_BN, 'has_dropout':has_dropout, 'pad_size':pad_size, 'pad_type':pad_type, 'relu_slope':relu_slope}
         cfg_pool={'pool_kernel':pool_kernel, 'pool_stride':pool_stride}
@@ -138,7 +141,10 @@ class unet3D(nn.Module): # symmetric unet
 class unet3D_m1(nn.Module): # deployed model-1
     def __init__(self, in_num=1, out_num=3, filters=[24,72,216,648],relu_slope=0.005):
         super(unet3D_m1, self).__init__()
-        if len(filters) != 4: raise AssertionError 
+        self.filters = filters 
+        self.io_num = [in_num, out_num]
+        self.relu_slope = relu_slope
+
         filters_in = [in_num] + filters[:-1]
         self.depth = len(filters)-1
         self.seq_num = self.depth*3+2

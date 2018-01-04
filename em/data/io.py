@@ -36,8 +36,12 @@ def getVar(batch_size, model_io_size, do_input=[True, False, False]):
 def getData(dirName, data_name, data_dataset_name):
     d_data = [None]*len(dirName)
     for i in range(len(dirName)):
-        if data_name[-3:] == '.h5':
-            d_data[i] =  np.array(h5py.File(dirName[i]+data_name,'r')[data_dataset_name],dtype=np.float32)[None,:]
+        if data_name[-3:] == '.h5' or data_name[-3:] == 'hdf':
+            if '/' in data_dataset_name:
+                tmp = data_dataset_name.split('/')
+                d_data[i] =  np.array(h5py.File(dirName[i]+data_name,'r')[tmp[0]][tmp[1]],dtype=np.float32)[None,:]
+            else:
+                d_data[i] =  np.array(h5py.File(dirName[i]+data_name,'r')[data_dataset_name],dtype=np.float32)[None,:]
         elif data_name[-4:] == '.pkl':
             d_data[i] =  np.array(pickle.load(dirName[i]+data_name,'rb'),dtype=np.float32)[None,:]
         else: # folder of images

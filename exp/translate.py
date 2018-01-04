@@ -29,6 +29,10 @@ def get_args():
 
     parser.add_argument('-f','--num-filter', type=str,  default='24,72,216,648',
                         help='caffe output')
+    parser.add_argument('-pok','--pool-kernel', type=str,  default='1,2,2',
+                        help='pool kernel')
+    parser.add_argument('-pos','--pool-stride', type=str,  default='1,2,2',
+                        help='pool stride')
     args = parser.parse_args()
     if args.output=='':
         args.output = args.weight
@@ -44,6 +48,8 @@ def main():
         pth2pkl(args.pth_model, args.output+'.pkl')
     elif args.opt==1: 
         model = unet3D(filters=[int(x) for x in args.num_filter.split(',')],
+                      pool_kernel=[int(x) for x in args.pool_kernel.split(',')],
+                      pool_stride=[int(x) for x in args.pool_stride.split(',')],
                       has_BN=args.has_BN==1)
         ww=pickle.load(open(args.weight+'.pkl','rb'))
         load_weights_pkl(model,ww)

@@ -1,6 +1,5 @@
 import sys
 import numpy as np
-from ..lib import malis_core as malisL
 import h5py
 import random
 import os
@@ -13,8 +12,10 @@ def readh5(filename, datasetname):
     return data
  
 def writeh5(filename, datasetname, dtarray):
+    # reduce redundant
     fid=h5py.File(filename,'w')
-    fid.create_dataset(datasetname,data=dtarray)
+    ds = fid.create_dataset(datasetname, dtarray.shape, compression="gzip", dtype=dtarray.dtype)
+    ds[:] = dtarray
     fid.close()
 def readh5k(filename, datasetname):
     fid=h5py.File(filename)
@@ -26,7 +27,8 @@ def readh5k(filename, datasetname):
 def writeh5k(filename, datasetname, dtarray):
     fid=h5py.File(filename,'w')
     for kk in datasetname:
-        fid.create_dataset(kk,data=dtarray[kk])
+        ds = fid.create_dataset(kk, dtarray[kk].shape, compression="gzip", dtype=dtarray[kk].dtype)
+        ds[:] = dtarray[kk]
     fid.close()
 
 def resizeh5(path_in, path_out, dataset, ratio=(0.5,0.5), interp=2, offset=[0,0,0]):
@@ -49,7 +51,7 @@ def resizeh5(path_in, path_out, dataset, ratio=(0.5,0.5), interp=2, offset=[0,0,
             im_out=im_out[:,offset[1]:-offset[1],offset[2]:-offset[2],offset[3]:-offset[3]]
     if path_out is None:
         return im_out
-    h5py.File( path_out, 'w').create_dataset( dataset, data=im_out )
+    writeh5(path_out, dataset, im_out)
 
 
 def writetxt(filename, dtarray):
@@ -58,6 +60,7 @@ def writetxt(filename, dtarray):
     a.close()
 # 2. segmentation wrapper
 def segToAffinity(seg):
+    from ..lib import malis_core as malisL
     nhood = malisL.mknhood3d()
     return malisL.seg_to_affgraph(seg,nhood)
 
