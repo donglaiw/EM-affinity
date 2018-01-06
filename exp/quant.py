@@ -35,7 +35,7 @@ def get_args():
     parser.add_argument('--overflow_rate', type=float, default=0.0, 
                         help='overflow rate')
     # train data 
-    parser.add_argument('-i','--input',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-4x6x6/',
+    parser.add_argument('-i','--input',  default='',
                         help='input path')
     parser.add_argument('-dn','--data-name',  default='im_uint8.h5',
                         help='image data name')
@@ -86,19 +86,23 @@ def main():
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
     
     print '3. infer quantization param'
-    test_loader, output_size, sample_num = get_data(args, model_io_size)
     test_var = Variable(torch.zeros(args.batch_size, 1, model_io_size[0][0], model_io_size[0][1], model_io_size[0][2]).cuda(), requires_grad=False)
-
-    for batch_id, data in enumerate(test_loader):
-        if batch_id % 10 ==0:
-            print 'process batch [%d/%d]' % (batch_id, args.batch_num)
-        test_var.data.copy_(torch.from_numpy(data[0]))
-        y_pred = model(test_var)
-        if batch_id == args.batch_num-1:
-            break
+    if args.input=='': # use random data
+        for batch_id in range(args.batch_num):
+            test_var.data.copy_(torch.rand(test_var.data.size()))
+            y_pred = model(test_var)
+    else: # use provided data
+        test_loader, output_size, sample_num = get_data(args, model_io_size)
+        for batch_id, data in enumerate(test_loader):
+            if batch_id % 10 ==0:
+                print 'process batch [%d/%d]' % (batch_id, args.batch_num)
+            test_var.data.copy_(torch.from_numpy(data[0]))
+            y_pred = model(test_var)
+            if batch_id == args.batch_num-1:
+                break
 
     # 5. save model
-    #import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     # model._modules['final']._modules['0_linear_quant'].counter
     # model.module._modules['final']._modules['0_linear_quant'].counter
     # model.modules._modules['final']._modules['0_linear_quant'].counter

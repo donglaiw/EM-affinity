@@ -52,7 +52,7 @@ def get_args():
                         help='if evaluate zwatershed')
     parser.add_argument('-ap', '--ag-param', default='',
                         help='env for agglomeration') # 2,3,1,0.15,0
-    parser.add_argument('-atr', '--ag-train-pref',  default='vol3',
+    parser.add_argument('-atr', '--ag-train-pref',  default='',
                         help='name of the train data')
     parser.add_argument('-ate', '--ag-test-pref',  default='',
                         help='name of the test data')
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     if args.ag_param!='':
         print '3. agglomeration'
         ag_str, ag_itr, ag_alg, ag_thr, ag_reg = args.ag_param.split(',')
-        ag_pref = args.ag_train_pref + root_pref[root_pref.find('-'):]
+        ag_pref = args.ag_train_pref 
         ag_suf_train = ag_pref+'_st'+ag_str+'_itr'+ag_itr+'_'+args.zw_thres+'_rm'+args.zw_rm+args.crop_suf
         ag_suf_test = ag_suf_train+'_'+ag_alg+'_'+ag_thr+'_'+ag_reg+'_'+args.ag_test_pref+args.crop_suf
         
@@ -130,7 +130,7 @@ if __name__ == "__main__":
         if args.ag_do_train==1 and not os.path.exists(ag_train):
             c3 = args.eval+args.ag_train+' -watershed '+zw_segRmC+' stack -prediction '+predReorderC+' stack -classifier '+ag_train+' -groundtruth '+args.seg_gt+' '+args.seg_gt_dn+' -strategy '+ag_str+' -iteration '+ag_itr+' -nomito\n'   
             runBash(c0+c1+c2+c3)
-        
+        print ag_train, args.ag_test_pref
         if os.path.exists(ag_train) and args.ag_test_pref!='' :
             print '\t 3.2 test RF'
             if not os.path.exists(ag_test):
@@ -140,6 +140,6 @@ if __name__ == "__main__":
 
             print '\t 3.3 evaluation'
             if not os.path.exists(ag_testEval):
-                print ' '.join([args.zw_env+'python', args.eval+args.do_v, '--stack1', ag_test, '--stackbase', args.seg_gt, '--dilate1', '1', '--dilatebase', '1', '--relabel1', '--relabelbase', '--filtersize', '100', '--anisotropic'])
+                # print ' '.join([args.zw_env+'python', args.eval+args.do_v, '--stack1', ag_test, '--stackbase', args.seg_gt, '--dilate1', '1', '--dilatebase', '1', '--relabel1', '--relabelbase', '--filtersize', '100', '--anisotropic'])
                 vi = check_output([args.zw_env+'python', args.eval+args.do_v, '--stack1', ag_test, '--stackbase', args.seg_gt, '--dilate1', '1', '--dilatebase', '1', '--relabel1', '--relabelbase', '--filtersize', '100', '--anisotropic'])
                 writetxt(ag_testEval, vi)

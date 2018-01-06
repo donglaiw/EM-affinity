@@ -165,7 +165,6 @@ def get_model(args, test_var):
     if args.num_gpu>0:
         model.cuda()
         if args.do_issac==1:
-            # hack it for now 
             test_var.data.copy_(torch.rand(test_var.data.size()))
             model = pth2issac(model).fuse().quantize(test_var)
 
@@ -192,6 +191,7 @@ def main():
 
             print '3. start testing'
             model.eval()
+            import pdb; pdb.set_trace()
             st0 = time.time()
             st = st0
             # multiple dataset
@@ -227,7 +227,9 @@ def main():
 
                 if batch_id == args.batch_end:
                     # early stop for debug
-                    pred=pred[:,:pp[0]+model_io_size[1][0]]
+                    pp = data[3][-1]
+                    pred=pred[:,:pp[1]+model_io_size[1][0]]
+                    writeh5(args.output, 'main', pred)
                     break
             et=time.time()
             print 'total time: '+str(et-st0)+' sec'

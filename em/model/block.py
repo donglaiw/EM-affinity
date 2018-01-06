@@ -9,7 +9,7 @@ import copy
 ## level-1: single unit
 def mergeCrop(x1, x2):
     # x1 left, x2 right
-    offset = [(x1.size()[x]-x2.size()[x])/2 for x in range(2,x1.dim())] 
+    offset = [(x1.size()[x]-x2.size()[x])//2 for x in range(2,x1.dim())] 
     return torch.cat([x2, x1[:,:,offset[0]:offset[0]+x2.size(2),
             offset[1]:offset[1]+x2.size(3),offset[2]:offset[2]+x2.size(4)]], 1)
 def mergeAdd(x1, x2):
