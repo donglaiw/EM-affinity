@@ -161,7 +161,7 @@ def get_model(args, model_io_size):
     return model, loss_w, pre_epoch
 
 def get_logger(args):
-    log_name = args.output+'log'
+    log_name = args.output+'/log'
     log_name += ['_L2_','_malis_'][args.loss_opt]+str(args.lr)+ '_'+str(args.loss_weight_opt)
     if len(args.snapshot)>0:
         log_name += '_'+args.snapshot[:args.snapshot.rfind('.')] if '/' not in args.snapshot else args.snapshot[args.snapshot.rfind('/')+1:args.snapshot.rfind('.')]

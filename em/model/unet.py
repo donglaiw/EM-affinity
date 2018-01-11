@@ -139,7 +139,7 @@ class unet3D(nn.Module): # symmetric unet
         return self.final(x)
 
 class unet3D_m1(nn.Module): # deployed model-1
-    def __init__(self, in_num=1, out_num=3, filters=[24,72,216,648],relu_slope=0.005):
+    def __init__(self, in_num=1, out_num=3, filters=[24,72,216,648],relu_slope=0.005, rescale_skip=0):
         super(unet3D_m1, self).__init__()
         self.filters = filters 
         self.io_num = [in_num, out_num]
@@ -176,6 +176,7 @@ class unet3D_m1(nn.Module): # deployed model-1
             for x in range(self.depth)]) 
 
         self.final = nn.Sequential(nn.Conv3d(filters[0], out_num, kernel_size=1, stride=1, bias=True))
+
 
     def getLearnableSeq(self, seq_id): # learnable variable 
         if seq_id < self.depth:

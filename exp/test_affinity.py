@@ -90,7 +90,7 @@ def init(args):
     return model_io_size, test_var
 
 
-def get_data(args, model_io_size):
+def get_data(args, model_io_size, test_var):
     # task_opt=0: prediction
     # task_opt=1: error per slice
     # task_opt=2: error per input volume
@@ -139,6 +139,14 @@ def get_data(args, model_io_size):
 
     if output_size is None:
         output_size = test_dataset.sample_size
+
+    if args.do_issac==1:
+        # need to initiate the test_var with real data
+        tmp_data = np.zeros([args.batch_size,1]+list(model_io_size[0]))
+        tmp_ind = np.floor(np.random.random(args.batch_size)*test_dataset.__len__()).astype(int)
+        for i in range(args.batch_size):
+            tmp_data[i,:] = test_dataset.__getitem__(tmp_ind[i])[0]
+        test_var.data.copy_(torch.from_numpy(tmp_data))
     return test_loader, output_size, batch_num
 
 def get_model(args, test_var):
@@ -165,7 +173,8 @@ def get_model(args, test_var):
     if args.num_gpu>0:
         model.cuda()
         if args.do_issac==1:
-            test_var.data.copy_(torch.rand(test_var.data.size()))
+            print 'do issac optimization'
+            # test_var.data.copy_(torch.rand(test_var.data.size()))
             model = pth2issac(model).fuse().quantize(test_var)
 
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
@@ -179,7 +188,7 @@ def main():
 
     print '1. setup data'
     model_io_size, test_var = init(args)
-    test_loader, output_size, batch_num = get_data(args, model_io_size)
+    test_loader, output_size, batch_num = get_data(args, model_io_size, test_var)
     
     if not os.path.exists(args.output):
         if not os.path.exists(args.snapshot):
@@ -191,7 +200,6 @@ def main():
 
             print '3. start testing'
             model.eval()
-            import pdb; pdb.set_trace()
             st0 = time.time()
             st = st0
             # multiple dataset

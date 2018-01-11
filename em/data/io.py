@@ -66,7 +66,7 @@ def getLabel(dirName, seg_name, suf_aff, seg_dataset_name):
         else: # pre-compute for faster i/o
             d_seg = np.array(h5py.File(dirName[i] + seg_name, 'r')[seg_dataset_name])
             d_label[i] = segToAffinity(d_seg)
-            writeh5(dirName + label_name, 'main', d_label[i])
+            writeh5(dirName[i] + label_name, 'main', d_label[i])
     return d_label
 
 def getDataAug(opt, data_color_opt=0, data_rotation_opt=0):

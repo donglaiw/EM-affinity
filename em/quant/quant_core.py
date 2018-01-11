@@ -109,6 +109,8 @@ class LinearQuant(nn.Module):
             sf_new = self.bits - 1 - compute_integral_part(input, self.overflow_rate)
             self.sf = min(self.sf, sf_new) if self.sf is not None else sf_new
             return input
+        elif self._counter == -10: # magic number to let it pass
+            return input 
         else:
             output = linear_quantize(input, self.sf, self.bits)
             return output
@@ -138,6 +140,8 @@ class LogQuant(nn.Module):
             sf_new = self.bits - 1 - compute_integral_part(log_abs_input, self.overflow_rate)
             self.sf = min(self.sf, sf_new) if self.sf is not None else sf_new
             return input
+        elif self._counter == -10: # magic number to let it pass
+            return input 
         else:
             output = log_linear_quantize(input, self.sf, self.bits)
             return output
@@ -183,6 +187,18 @@ def quantize_weight(state_dict, bits=8, do_bias=True, overflow_rate=0.0, quant_m
         state_dict_quant[k] = v_quant
     return state_dict_quant
 
+def get_quantize_layer(quant_method, layer_name, bits, overflow_rate=0.0, counter=10):
+    quant_layer = []
+    if quant_method == 'linear':
+        quant_layer = LinearQuant('{}_quant'.format(layer_name), bits=bits, overflow_rate=overflow_rate, counter=counter)
+    elif quant_method == 'log':
+        quant_layer = NormalQuant('{}_quant'.format(layer_name), bits=bits, quant_func=log_minmax_quantize)
+    elif quant_method == 'minmax':
+        quant_layer = NormalQuant('{}_quant'.format(layer_name), bits=bits, quant_func=min_max_quantize)
+    elif quant_method == 'tanh':
+        quant_layer = NormalQuant('{}_quant'.format(layer_name), bits=bits, quant_func=tanh_quantize)
+    return quant_layer
+
 def quantize_feat(model, bits=8, overflow_rate=0.0, quant_method='linear', counter=10):
     assert quant_method in ['linear', 'minmax', 'log', 'tanh']
     for seq_id in range(model.seq_num):
@@ -191,13 +207,5 @@ def quantize_feat(model, bits=8, overflow_rate=0.0, quant_method='linear', count
         for k, v in seq._modules.items():
             l[k] = v
             if isinstance(v, (nn.Conv3d, nn.Linear, nn.BatchNorm3d, nn.AvgPool3d)):
-                if quant_method == 'linear':
-                    quant_layer = LinearQuant('{}_quant'.format(k), bits=bits, overflow_rate=overflow_rate, counter=counter)
-                elif quant_method == 'log':
-                    quant_layer = NormalQuant('{}_quant'.format(k), bits=bits, quant_func=log_minmax_quantize)
-                elif quant_method == 'minmax':
-                    quant_layer = NormalQuant('{}_quant'.format(k), bits=bits, quant_func=min_max_quantize)
-                elif quant_method == 'tanh':
-                    quant_layer = NormalQuant('{}_quant'.format(k), bits=bits, quant_func=tanh_quantize)
-                l['{}_{}_quant'.format(k, quant_method)] = quant_layer
+                l['{}_{}_quant'.format(k, quant_method)] = get_quantize_layer(quant_method, k, bits, overflow_rate, counter)
         model.setLearnableSeq(seq_id, nn.Sequential(l))

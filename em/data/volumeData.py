@@ -1,6 +1,7 @@
 import numpy as np
 import torch.utils.data
 from ..lib import malis_core as malisL
+import json
 
 # -- 1. main datset --
 class VolumeDataset(torch.utils.data.Dataset):
@@ -58,18 +59,15 @@ class VolumeDataset(torch.utils.data.Dataset):
     
     def getPos(self, index):
         raise NotImplementedError("Need to implement getPos() !")
+ 
+    def getInput(self, data, pos, sz, shift=[0,0]):
+        return data[pos[0]][:,shift[0]+pos[1]:shift[1]+pos[1]+sz[0],
+                             shift[0]+pos[2]:shift[1]+pos[2]+sz[1],
+                             shift[0]+pos[3]:shift[1]+pos[3]+sz[2]].copy()
 
-    def __getitem__(self, index):
-        # todo: add random zoom
-        pos = self.getPos(index)
-        out_data = self.data[pos[0]][:,pos[1]:pos[1]+self.out_data_size[0],
-                             pos[2]:pos[2]+self.out_data_size[1],
-                             pos[3]:pos[3]+self.out_data_size[2]].copy()
-        out_label = False
-        out_seg = False;
-        # post
-        do_reflect=None
-        do_swapxy=False
+    def applyAugmentData(self, out_data):
+        do_reflect = None
+        do_swapxy = None
         if self.reflect is not None:
             # random rotation/relection
             do_reflect = [self.reflect[x]>0 and np.random.random()>0.5 for x in range(3)]
@@ -83,6 +81,7 @@ class VolumeDataset(torch.utils.data.Dataset):
         if self.swapxy and np.random.random()>0.5:
             do_swapxy = True
             out_data = out_data.transpose((0,1,3,2))
+
         # color scale/shift
         if self.color_scale is not None:
             out_data_mean = out_data.mean()
@@ -93,32 +92,60 @@ class VolumeDataset(torch.utils.data.Dataset):
         if self.clip is not None:
             out_data = np.clip(out_data,self.clip[0],self.clip[1])
 
+        return do_reflect,do_swapxy
+
+    def applyAugmentLabel(self, tmp_label, pos, do_reflect, do_swapxy):
+        # crop a bit bigger
+        if self.extra_pad>0:
+            out_label = tmp_label[:,1:-1,1:-1,1:-1]
+        else:
+            out_label = tmp_label
+
+        if do_reflect is not None and any(do_reflect): # no need to reflect
+
+            st = np.ones((3,3),dtype=int)
+            if do_reflect[0]:
+                tmp_label = tmp_label[:,::-1,:,:]
+                st[0,0] -= 1
+            if do_reflect[1]:
+                tmp_label = tmp_label[:,:,::-1,:]
+                st[1,1] -= 1
+            if do_reflect[2]:
+                tmp_label = tmp_label[:,:,:,::-1]
+                st[2,2] -= 1
+            for i in range(3):
+                out_label[i] = tmp_label[i,st[i,0]:st[i,0]+self.out_label_size[0],st[i,1]:st[i,1]+self.out_label_size[1],st[i,2]:st[i,2]+self.out_label_size[2]]
+        if do_swapxy:
+            out_label = out_label.transpose((0,1,3,2))
+            out_label[[1,2]] = out_label[[2,1]] # swap x-, y-affinity
+        return out_label
+
+
+    def __getitem__(self, index):
+        # todo: add random zoom
+        out_label = False
+        out_seg = False
+
+        pos = self.getPos(index)
+        out_data = self.getInput(self.data, pos, self.out_data_size)
+        # augment data
+        do_reflect, do_swapxy= self.applyAugmentData(out_data)
+
         # do label
         if self.label is not None and self.label[0] is not None:
             # pad one on the left, for possible reflection
             # assume label is the same size as data
-            out_label = self.label[pos[0]][:,self.extra_pad+pos[1]:self.extra_pad+pos[1]+self.out_label_size[0],
-                                   self.extra_pad+pos[2]:self.extra_pad+pos[2]+self.out_label_size[1],
-                                   self.extra_pad+pos[3]:self.extra_pad+pos[3]+self.out_label_size[2]].copy().astype(np.float32)
+            if self.extra_pad>0: # crop a bigger affinity for reflection
+                tmp_label = self.getInput(self.label, pos, self.out_label_size, [self.extra_pad-1,self.extra_pad+1]).astype(np.float32)
+            else:
+                tmp_label = self.getInput(self.label, pos, self.out_label_size).astype(np.float32)
+            out_label = self.applyAugmentation(tmp_label, do_reflect, do_swapxy)
+
             if do_reflect is not None and any(do_reflect):
-                st = np.ones((3,3),dtype=int)
-                tmp_label = self.label[pos[0]][:,self.extra_pad-1+pos[1]:self.extra_pad+1+pos[1]+self.out_label_size[0],
-                                       self.extra_pad-1+pos[2]:self.extra_pad+1+pos[2]+self.out_label_size[1],
-                                       self.extra_pad-1+pos[3]:self.extra_pad+1+pos[3]+self.out_label_size[2]].copy().astype(np.float32)
-                if do_reflect[0]:
-                    tmp_label = tmp_label[:,::-1,:,:]
-                    st[0,0] -= 1
-                if do_reflect[1]:
-                    tmp_label = tmp_label[:,:,::-1,:]
-                    st[1,1] -= 1
-                if do_reflect[2]:
-                    tmp_label = tmp_label[:,:,:,::-1]
-                    st[2,2] -= 1
-                for i in range(3):
-                    out_label[i] = tmp_label[i,st[i,0]:st[i,0]+self.out_label_size[0],st[i,1]:st[i,1]+self.out_label_size[1],st[i,2]:st[i,2]+self.out_label_size[2]]
-            if do_swapxy:
-                out_label = out_label.transpose((0,1,3,2))
-                out_label[[1,2]] = out_label[[2,1]] # swap x-, y-affinity
+                pass
+            else: # directly crop out the original data
+                pass
+
             # do local segmentation from affinity
             if self.nhood is not None: # for malis loss, need local segmentation
                 out_seg = malisL.connected_components_affgraph(out_label.astype(np.int32), self.nhood)[0].astype(np.uint64)
@@ -139,6 +166,43 @@ class VolumeDatasetTest(VolumeDataset):
             else:
                 pos[i] = self.data_size[pos[0]][i-1]-self.out_data_size[i-1]
         return pos
+
+class VolumeDatasetTestJson(VolumeDataset):
+    # for image tiles 
+    # data: json file
+    def __init__(self,
+                 data, res=[30,4,4], slice_size=[1,1024,1024],
+                 label=None, do_seg = False,
+                 extra_pad = 1,
+                 zoom_range = None, #((0.8,1.2),(0.8,1.2),(0.8,1.2))
+                 shift_range = None, #(0,0,0)
+                 reflect = None, #(0,0,0),
+                 swapxy = False,
+                 out_data_size = (31,204,204),
+                 out_label_size = (3,116,116),
+                 sample_stride = (1,1,1), # grid sample
+                 color_scale = None, #(0.8,1.2)
+                 color_shift = None, #(-0.2,0.2)
+                 clip = None): # (0.05,0.95)
+        super(VolumeDatasetTestJson,self).__init__(data,label,do_seg,
+                extra_pad,zoom_range,shift_range,reflect,swapxy,out_data_size,
+                out_label_size,sample_stride,color_scale,color_shift,clip)
+        # read one slice at a time
+        data_stat = json.load(data)
+        self.data_tile_name = data_stat['sections']
+        self.data_tile_size = [1,data_stat['dimensions']['width'],data_stat['dimensions']['height']]
+        self.data_tile_num = [data_stat['dimensions']['depth'],data_stat['dimensions']['n_columns'],data_stat['dimensions']['n_rows']]
+
+    def getPos(self, index):
+        pos = self.index2zyx(index)
+        # take care of the boundary case
+        for i in range(1,4):
+            if pos[i] != self.sample_size[pos[0]][i-1]-1:
+                pos[i] = pos[i] * self.sample_stride[i-1]
+            else:
+                pos[i] = self.data_size[pos[0]][i-1]-self.out_data_size[i-1]
+        return pos
+
 
 # -- 2. misc --
 # for dataloader

@@ -73,8 +73,9 @@ if __name__ == "__main__":
     predUp = args.pred_pref+'x'+str(args.resize)+'.h5'
     predReorder = predUp[:-3] + '-zyxc.h5'
     print '\t 1.1 upsample'
-    if args.resize != 1 and not os.path.exists(predUp):
-        resizeh5(args.pred_pref+'.h5', predUp, 'main', ratio=(args.resize, args.resize), interp=1)
+    if args.resize != 1: 
+        if not os.path.exists(predUp):
+            resizeh5(args.pred_pref+'.h5', predUp, 'main', ratio=(args.resize, args.resize), interp=1)
     else:
         predUp = args.pred_pref+'.h5'
         predReorder = predUp[:-3] + '-zyxc.h5'
@@ -97,10 +98,11 @@ if __name__ == "__main__":
     if int(args.zw_rm)>0 and not os.path.exists(zw_segRm):
         z0 = np.array(h5py.File(zw_seg)[args.zw_name])
         z0F = z0.reshape((-1))
-        num = np.histogram(z0F,range(z0.min(),z0.max()+2))
-        bad_id = np.where(num[0] < int(args.zw_rm))[0]
+        z0_id = np.unique(z0)
+        num = np.histogram(z0F,np.append(z0_id,z0_id[-1]+1))
+        bad_id = z0_id[np.where(num[0] < int(args.zw_rm))[0]]
         z0F[np.in1d(z0F, bad_id)] = 0
-        print len(np.unique(z0)),len(num[0])
+        print 'initial #seg:',len(z0_id),'left #seg:',len(z0_id)-len(bad_id)
         writeh5(zw_segRm, args.zw_name, z0)
     print '\t 2.3 evaluation'
     if args.do_zwaterEval==1 and not os.path.exists(zw_segEval):

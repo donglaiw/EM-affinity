@@ -17,6 +17,7 @@ def writeh5(filename, datasetname, dtarray):
     ds = fid.create_dataset(datasetname, dtarray.shape, compression="gzip", dtype=dtarray.dtype)
     ds[:] = dtarray
     fid.close()
+
 def readh5k(filename, datasetname):
     fid=h5py.File(filename)
     data={}
@@ -24,6 +25,7 @@ def readh5k(filename, datasetname):
         data[kk]=array(fid[kk])
     fid.close()
     return data
+
 def writeh5k(filename, datasetname, dtarray):
     fid=h5py.File(filename,'w')
     for kk in datasetname:
