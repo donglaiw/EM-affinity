@@ -8,14 +8,18 @@ import torch.utils.data
 import os, sys; sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from em.model.io import load_checkpoint,save_checkpoint
 from em.model.unet import unet3D
+from em.model.deploy import unet3D_m1, unet3D_m2
 from em.model.optim import decay_lr
 from em.model.loss import weightedMSE,malisWeight,labelWeight
 from em.data.volumeData import VolumeDatasetTrain, VolumeDatasetTest, np_collate
 from em.data.io import getVar, getData, getLabel, getDataAug, cropCentralN
+#from em.util.vis_data import visSliceSeg
 
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
     # I/O
+    parser.add_argument('-m','--model-id',  type=int, default=0,
+                        help='model id')
     parser.add_argument('-t','--train',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-3x6x6/',
                         help='input folder (train)')
     parser.add_argument('-v','--val',  default='',
@@ -24,6 +28,10 @@ def get_args():
                         help='image data')
     parser.add_argument('-ln','--seg-name',  default='seg-groundtruth2-malis.h5',
                         help='segmentation label')
+    parser.add_argument('-dnv','--data-name-val',  default='im_uint8.h5',
+                        help='image data for val')
+    parser.add_argument('-lnv','--seg-name-val',  default='seg-groundtruth2-malis.h5',
+                        help='segmentation label for val')
     parser.add_argument('-lnd','--seg-dataset-name',  default='main',
                         help='dataset name in label')
     parser.add_argument('-dnd','--data-dataset-name',  default='main',
@@ -105,16 +113,21 @@ def get_data(args, model_io_size, opt='train'):
     if opt=='train':
         dirName = args.train.split('@')
         numWorker = args.num_cpu
+        data_name = args.data_name
+        seg_name = args.seg_name
     else:
         dirName = args.val.split('@')
         numWorker = 1
+        data_name = args.data_name_val
+        seg_name = args.seg_name_val
     if len(dirName[0])==0:
         return None
 
     # 1. load data
     suf_aff = '_aff'+args.opt_param
-    train_data = getData(dirName, args.data_name, args.data_dataset_name)
-    train_label = getLabel(dirName, args.seg_name, suf_aff, args.seg_dataset_name)
+    train_data = getData(dirName, data_name , args.data_dataset_name)
+    train_label = getLabel(dirName, seg_name, suf_aff, args.seg_dataset_name)
+    # create extra-pad
     train_data, train_label = cropCentralN(train_data, train_label, model_io_size)
     do_seg = args.loss_opt==1 # need seg if do malis loss
 
@@ -134,18 +147,20 @@ def get_data(args, model_io_size, opt='train'):
 def get_model(args, model_io_size):
     # 1. get model
     num_filter = [int(x) for x in args.num_filter.split(',')]
-    opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
-    opt_param = [[int(x) for x in y.split('-')] for y in  args.opt_param.split('@')]
-    model = unet3D(filters=num_filter, opt_arch = opt_arch, opt_param = opt_param,
-                   has_BN = args.has_BN==1, has_dropout = args.has_dropout, relu_slope = args.relu_slope,
-                   pad_size = args.pad_size, pad_type= args.pad_type)
-    if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu))
-    model.cuda()
+    if args.model_id==0: # flexible framework
+        opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
+        opt_param = [[int(x) for x in y.split('-')] for y in  args.opt_param.split('@')]
+        model = unet3D(filters=num_filter, opt_arch = opt_arch, opt_param = opt_param,
+                       has_BN = args.has_BN==1, has_dropout = args.has_dropout, relu_slope = args.relu_slope,
+                       pad_size = args.pad_size, pad_type= args.pad_type)
+    elif args.model_id==2: # _m2
+        model = unet3D_m2(filters=num_filter, has_BN = args.has_BN==1)
+
 
     # 2. load previous model weight
     pre_epoch = args.pre_epoch
     if len(args.snapshot)>0:
-        cp = load_checkpoint(args.snapshot, args.num_gpu)
+        cp = load_checkpoint(args.snapshot)
         model.load_state_dict(cp['state_dict'])
         if pre_epoch == 0:
             pre_epoch = cp['epoch']
@@ -171,12 +186,12 @@ def get_logger(args):
 def get_optimizer(args, model, pre_epoch=0):
     betas = [float(x) for x in args.betas.split(',')]
     frozen_id = []
-    if args.num_gpu==1 and model.up[0].opt[0]==0: # hacked upsampling layer
+    if args.model_id==0 and model.up[0].opt[0]==0: # hacked upsampling layer
         for i in range(len(model.up)):
             frozen_id +=  list(map(id,model.up[i].up._modules['0'].parameters()))
-    elif model.module.up[0].opt[0]==0: # hacked upsampling layer
-        for i in range(len(model.module.up)):
-            frozen_id +=  list(map(id,model.module.up[i].up._modules['0'].parameters()))
+    elif args.model_id==2: # hacked upsampling layer
+        for i in range(len(model.upS)):
+            frozen_id +=  list(map(id,model.upS[i]._modules['0'].parameters()))
     frozen_params = filter(lambda p: id(p) in frozen_id, model.parameters())
     rest_params = filter(lambda p: id(p) not in frozen_id, model.parameters())
     optimizer = torch.optim.Adam([
@@ -220,6 +235,8 @@ def main():
     optimizer, lr_decay = get_optimizer(args, model, pre_epoch)
 
     print '4. start training'
+    if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu))
+    model.cuda()
     if args.lr == 0:
         model.eval()
     else:
@@ -238,7 +255,9 @@ def main():
         t1 = time.time()
 
         # Training error
-        #visSliceSeg(data[0], data[2], offset=[14,44,44],outN='result/db/train_'+str(iter_id)+'_'+str(data[3][0][0])+'.png', frame_id=0)
+        #print data[0].shape,data[1].shape,data[2].shape
+        #visSliceSeg(data[0], data[2], offset=[14,44,44],outN='tmp/train_seg'+str(iter_id)+'_'+str(data[3][0][0])+'.png', frame_id=0)
+        #visSliceSeg(data[0], data[1][0][1], offset=[14,44,44],outN='tmp/train_affy'+str(iter_id)+'_'+str(data[3][0][0])+'.png', frame_id=0)
         #visSliceSeg(data[0], data[2], offset=[6,14,14],outN='result/db/train_'+str(iter_id)+'_'+str(data[3][0][0])+'.png', frame_id=0)
         #visSlice(data[0][0,0],outN='result/db/train_im.png',frame_id=6)
         train_vars[0].data.copy_(torch.from_numpy(data[0]))

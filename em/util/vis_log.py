@@ -1,6 +1,5 @@
 import sys
 import numpy as np
-import malis_core
 import h5py
 
 def getLoss(fn):
@@ -24,22 +23,25 @@ def getAvg(rr, avg_step):
     rr_avg = rr[:num_avg*avg_step].reshape((num_avg,avg_step)).mean(axis=1)
     return rr_avg
 
-def plot_result(inN, step=100, outN='result.png'):
+def plot_result(inN, step=100, do_plot=True, outN=None):
     import csv
-    import matplotlib as mpl
-    mpl.use('Agg')
-    import matplotlib.pyplot as plt
     with open(inN, 'rb') as logs:
-         reader = csv.reader(logs, delimiter = ' ')
-         rows = list(reader)
-         x = [int(row[1][:-1]) for row in rows]
-         ytrain = np.array([float(row[2].split('=')[1]) for row in rows])
-         ytest = np.array([float(row[3].split('=')[1]) for row in rows])
-         ytrain = np.mean(ytrain[:(ytrain.shape[0]/step)*step].reshape(-1, step), axis=1)
-         ytest = np.mean(ytest[:(ytest.shape[0]/step)*step].reshape(-1, step), axis=1)
-         plt.cla()
-         plt.plot(ytrain)
-         plt.plot(ytest)
-         plt.legend(['Training loss', 'Testing loss'])
-         plt.savefig(outN)
-         return ytrain, ytest
+       reader = csv.reader(logs, delimiter = ' ')
+       rows = list(reader)
+       x = [int(row[1][:-1]) for row in rows]
+       ytrain = np.array([float(row[2].split('=')[1]) for row in rows])
+       ytest = np.array([float(row[3].split('=')[1]) for row in rows])
+       ytrain = np.mean(ytrain[:(ytrain.shape[0]/step)*step].reshape(-1, step), axis=1)
+       ytest = np.mean(ytest[:(ytest.shape[0]/step)*step].reshape(-1, step), axis=1)
+       if do_plot:
+           import matplotlib as mpl
+           import matplotlib.pyplot as plt
+           if outN is not None:
+               mpl.use('Agg')
+           plt.cla()
+           plt.plot(ytrain)
+           plt.plot(ytest)
+           plt.legend(['Training loss', 'Testing loss'])
+           if outN is not None:
+               plt.savefig(outN)
+    return ytrain, ytest

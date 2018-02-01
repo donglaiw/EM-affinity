@@ -206,6 +206,6 @@ def quantize_feat(model, bits=8, overflow_rate=0.0, quant_method='linear', count
         l = OrderedDict()
         for k, v in seq._modules.items():
             l[k] = v
-            if isinstance(v, (nn.Conv3d, nn.Linear, nn.BatchNorm3d, nn.AvgPool3d)):
+            if isinstance(v, (nn.Conv3d, nn.Linear, nn.BatchNorm3d, nn.AvgPool3d, nn.LeakyReLU)):
                 l['{}_{}_quant'.format(k, quant_method)] = get_quantize_layer(quant_method, k, bits, overflow_rate, counter)
         model.setLearnableSeq(seq_id, nn.Sequential(l))

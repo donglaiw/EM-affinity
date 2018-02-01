@@ -9,14 +9,24 @@ import h5py
 import os
 from ..util.misc import writeh5, segToAffinity
 
-def setPred(pred, y_pred, pred_sz, pos, lt=None, st=0):
+def setPred(pred, y_pred, pred_sz, pos, lt=None, st=0, pred_ww=None, ww=None):
     if lt is None:
         lt = pos.shape[0]
-    for j in range(st,lt):
-        pp = pos[j] 
-        pred[:,pp[1]:pp[1]+pred_sz[0],
-              pp[2]:pp[2]+pred_sz[1],
-              pp[3]:pp[3]+pred_sz[2]] = y_pred[j].copy()
+    if pred_ww is None: # simply assign
+        for j in range(st,lt):
+            pp = pos[j] 
+            pred[:,pp[1]:pp[1]+pred_sz[0],
+                  pp[2]:pp[2]+pred_sz[1],
+                  pp[3]:pp[3]+pred_sz[2]] = y_pred[j].copy()
+    else:
+        for j in range(st,lt):
+            pp = pos[j] 
+            pred[:,pp[1]:pp[1]+pred_sz[0],
+                  pp[2]:pp[2]+pred_sz[1],
+                  pp[3]:pp[3]+pred_sz[2]] += y_pred[j]*ww
+            pred_ww[:,pp[1]:pp[1]+pred_sz[0],
+                  pp[2]:pp[2]+pred_sz[1],
+                  pp[3]:pp[3]+pred_sz[2]] += ww
 
 
 def getVar(batch_size, model_io_size, do_input=[True, False, False]):
@@ -39,9 +49,9 @@ def getData(dirName, data_name, data_dataset_name):
         if data_name[-3:] == '.h5' or data_name[-3:] == 'hdf':
             if '/' in data_dataset_name:
                 tmp = data_dataset_name.split('/')
-                d_data[i] =  np.array(h5py.File(dirName[i]+data_name,'r')[tmp[0]][tmp[1]],dtype=np.float32)[None,:]
+                d_data[i] =  np.array(h5py.File(dirName[i]+'/'+data_name,'r')[tmp[0]][tmp[1]],dtype=np.float32)[None,:]
             else:
-                d_data[i] =  np.array(h5py.File(dirName[i]+data_name,'r')[data_dataset_name],dtype=np.float32)[None,:]
+                d_data[i] =  np.array(h5py.File(dirName[i]+'/'+data_name,'r')[data_dataset_name],dtype=np.float32)[None,:]
         elif data_name[-4:] == '.pkl':
             d_data[i] =  np.array(pickle.load(dirName[i]+data_name,'rb'),dtype=np.float32)[None,:]
         else: # folder of images
@@ -62,7 +72,7 @@ def getLabel(dirName, seg_name, suf_aff, seg_dataset_name):
     for i in range(len(dirName)):
         # load whole aff -> remove offset for label, pad a bit for rotation augmentation
         if os.path.exists(dirName[i] + label_name):
-            d_label[i] = np.array(h5py.File(dirName[i] + label_name,'r')[seg_dataset_name])
+            d_label[i] = np.array(h5py.File(dirName[i] + label_name,'r')['main'])
         else: # pre-compute for faster i/o
             d_seg = np.array(h5py.File(dirName[i] + seg_name, 'r')[seg_dataset_name])
             d_label[i] = segToAffinity(d_seg)
@@ -96,8 +106,8 @@ def cropCentral(data,label,offset,extraPad=True):
         label = np.lib.pad(label,((0,0),(1,1),(1,1),(1,1)),mode='reflect')
 
     sz_diff = np.array(data.shape)-np.array(label.shape)
-    sz_offset = sz_diff[1:]/2 # floor
-    sz_offset2 = sz_diff[1:]-sz_diff[1:]/2 #ceil
+    sz_offset = sz_diff[1:]//2 # floor
+    sz_offset2 = sz_diff[1:]-sz_diff[1:]//2 #ceil
     if extraPad: # extra padding for data augmentation affinity
         sz_offset+=1
         sz_offset2+=1

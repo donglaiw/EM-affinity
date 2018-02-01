@@ -1,5 +1,5 @@
 import numpy as np
-import pickle, h5py, time, os, sys, argparse
+import pickle, h5py, time, os, sys
 from scipy.ndimage.interpolation import zoom
 
 from PIL import Image
@@ -71,9 +71,11 @@ def visSliceSeg(imN, segN, ratio=[1,1,1], offset=[14,44,44],outN=None, frame_id=
     im = Image.fromarray(np.uint8(255*out))
     im.save(outN)
 
-def visMontage(imN,imSize=(64,64),outN=None,numCol=5,order=0):
+def visMontage(imN,imSize=(64,64),outN=None,numCol=None,order=1,do_permute=None):
     ds = h5py.File(imN)
     data = np.array(ds[ds.keys()[0]])
+    if do_permute is not None:
+        data = np.transpose(data,do_permute)
     numIm = data.shape[0]
     if numCol is None:
         numCol = int(np.ceil(np.sqrt(numIm)))

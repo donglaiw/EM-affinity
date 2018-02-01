@@ -92,17 +92,15 @@ class VolumeDataset(torch.utils.data.Dataset):
         if self.clip is not None:
             out_data = np.clip(out_data,self.clip[0],self.clip[1])
 
-        return do_reflect,do_swapxy
+        return out_data, do_reflect,do_swapxy
 
-    def applyAugmentLabel(self, tmp_label, pos, do_reflect, do_swapxy):
-        # crop a bit bigger
+    def applyAugmentLabel(self, tmp_label, do_reflect, do_swapxy):
+        # by default: no reflection
         if self.extra_pad>0:
             out_label = tmp_label[:,1:-1,1:-1,1:-1]
         else:
             out_label = tmp_label
-
         if do_reflect is not None and any(do_reflect): # no need to reflect
-
             st = np.ones((3,3),dtype=int)
             if do_reflect[0]:
                 tmp_label = tmp_label[:,::-1,:,:]
@@ -113,8 +111,9 @@ class VolumeDataset(torch.utils.data.Dataset):
             if do_reflect[2]:
                 tmp_label = tmp_label[:,:,:,::-1]
                 st[2,2] -= 1
-            for i in range(3):
-                out_label[i] = tmp_label[i,st[i,0]:st[i,0]+self.out_label_size[0],st[i,1]:st[i,1]+self.out_label_size[1],st[i,2]:st[i,2]+self.out_label_size[2]]
+            if self.extra_pad>0: # shift for the right affinity
+                for i in range(3):
+                    out_label[i] = tmp_label[i,st[i,0]:st[i,0]+self.out_label_size[0],st[i,1]:st[i,1]+self.out_label_size[1],st[i,2]:st[i,2]+self.out_label_size[2]]
         if do_swapxy:
             out_label = out_label.transpose((0,1,3,2))
             out_label[[1,2]] = out_label[[2,1]] # swap x-, y-affinity
@@ -129,7 +128,7 @@ class VolumeDataset(torch.utils.data.Dataset):
         pos = self.getPos(index)
         out_data = self.getInput(self.data, pos, self.out_data_size)
         # augment data
-        do_reflect, do_swapxy= self.applyAugmentData(out_data)
+        out_data, do_reflect, do_swapxy = self.applyAugmentData(out_data)
 
         # do label
         if self.label is not None and self.label[0] is not None:
@@ -137,14 +136,10 @@ class VolumeDataset(torch.utils.data.Dataset):
             # assume label is the same size as data
             if self.extra_pad>0: # crop a bigger affinity for reflection
                 tmp_label = self.getInput(self.label, pos, self.out_label_size, [self.extra_pad-1,self.extra_pad+1]).astype(np.float32)
-            else:
+            else: # approx affinity, 1-pix off
                 tmp_label = self.getInput(self.label, pos, self.out_label_size).astype(np.float32)
-            out_label = self.applyAugmentation(tmp_label, do_reflect, do_swapxy)
-
-            if do_reflect is not None and any(do_reflect):
-                pass
-            else: # directly crop out the original data
-                pass
+            
+            out_label = self.applyAugmentLabel(tmp_label, do_reflect, do_swapxy)
 
             # do local segmentation from affinity
             if self.nhood is not None: # for malis loss, need local segmentation

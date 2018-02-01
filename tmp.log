@@ -1,0 +1,83 @@
+sshd      20572             donglai  cwd   unknown                              /proc/20572/cwd (readlink: Permission denied)
+sshd      20572             donglai  rtd   unknown                              /proc/20572/root (readlink: Permission denied)
+sshd      20572             donglai  txt   unknown                              /proc/20572/exe (readlink: Permission denied)
+sshd      20572             donglai NOFD                                        /proc/20572/fd (opendir: Permission denied)
+bash      20573             donglai  cwd       DIR   0,49      1162 13452939804 /n/home04/donglai (rcstorenfs:/ifs/rc_homes/home04)
+bash      20573             donglai  rtd       DIR  259,3      4096           2 /
+bash      20573             donglai  txt       REG  259,4    960376     1050097 /usr/bin/bash
+bash      20573             donglai  mem       REG  259,4    164112      393853 /usr/lib64/ld-2.17.so
+bash      20573             donglai  mem       REG  259,4     26254      400626 /usr/lib64/gconv/gconv-modules.cache
+bash      20573             donglai  mem       REG  259,4    174520      393495 /usr/lib64/libtinfo.so.5.9
+bash      20573             donglai  mem       REG  259,4     19776      411248 /usr/lib64/libdl-2.17.so
+bash      20573             donglai  mem       REG  259,4   2127336      394098 /usr/lib64/libc-2.17.so
+bash      20573             donglai  mem       REG  259,4     62184      411253 /usr/lib64/libnss_files-2.17.so
+bash      20573             donglai  mem       REG  259,4     37112      418553 /usr/lib64/libnss_sss.so.2
+bash      20573             donglai  mem       REG  259,5   8406312      262661 /var/lib/sss/mc/passwd
+bash      20573             donglai  mem       REG  259,4 106070960      671957 /usr/lib/locale/locale-archive
+bash      20573             donglai    0u      CHR  136,8       0t0          11 /dev/pts/8
+bash      20573             donglai    1u      CHR  136,8       0t0          11 /dev/pts/8
+bash      20573             donglai    2u      CHR  136,8       0t0          11 /dev/pts/8
+bash      20573             donglai    3r      REG  259,5   8406312      262661 /var/lib/sss/mc/passwd
+bash      20573             donglai  255u      CHR  136,8       0t0          11 /dev/pts/8
+sshd      20696             donglai  cwd   unknown                              /proc/20696/cwd (readlink: Permission denied)
+sshd      20696             donglai  rtd   unknown                              /proc/20696/root (readlink: Permission denied)
+sshd      20696             donglai  txt   unknown                              /proc/20696/exe (readlink: Permission denied)
+sshd      20696             donglai NOFD                                        /proc/20696/fd (opendir: Permission denied)
+bash      20697             donglai  cwd       DIR   0,56      4096   399148901 /net/coxfs01/srv/export/coxfs01/share_root/donglai/lib/malis-pytorch (coxfs01:/srv/export/coxfs01/share_root)
+bash      20697             donglai  rtd       DIR  259,3      4096           2 /
+bash      20697             donglai  txt       REG  259,4    960376     1050097 /usr/bin/bash
+bash      20697             donglai  mem       REG  259,4    164112      393853 /usr/lib64/ld-2.17.so
+bash      20697             donglai  mem       REG  259,4     26254      400626 /usr/lib64/gconv/gconv-modules.cache
+bash      20697             donglai  mem       REG  259,4    174520      393495 /usr/lib64/libtinfo.so.5.9
+bash      20697             donglai  mem       REG  259,4     19776      411248 /usr/lib64/libdl-2.17.so
+bash      20697             donglai  mem       REG  259,4   2127336      394098 /usr/lib64/libc-2.17.so
+bash      20697             donglai  mem       REG  259,4 106070960      671957 /usr/lib/locale/locale-archive
+bash      20697             donglai  mem       REG  259,4     62184      411253 /usr/lib64/libnss_files-2.17.so
+bash      20697             donglai  mem       REG  259,4     37112      418553 /usr/lib64/libnss_sss.so.2
+bash      20697             donglai  mem       REG  259,5   8406312      262661 /var/lib/sss/mc/passwd
+bash      20697             donglai    0u      CHR  136,6       0t0           9 /dev/pts/6
+bash      20697             donglai    1u      CHR  136,6       0t0           9 /dev/pts/6
+bash      20697             donglai    2u      CHR  136,6       0t0           9 /dev/pts/6
+bash      20697             donglai    3r      REG  259,5   8406312      262661 /var/lib/sss/mc/passwd
+bash      20697             donglai  255u      CHR  136,6       0t0           9 /dev/pts/6
+lsof      20802             donglai  cwd       DIR   0,56      4096   399148901 /net/coxfs01/srv/export/coxfs01/share_root/donglai/lib/malis-pytorch (coxfs01:/srv/export/coxfs01/share_root)
+lsof      20802             donglai  rtd       DIR  259,3      4096           2 /
+lsof      20802             donglai  txt       REG  259,4    154072     1441872 /usr/sbin/lsof
+lsof      20802             donglai  mem       REG  259,4    164112      393853 /usr/lib64/ld-2.17.so
+lsof      20802             donglai  mem       REG  259,4    155744      393482 /usr/lib64/libselinux.so.1
+lsof      20802             donglai  mem       REG  259,4   2127336      394098 /usr/lib64/libc-2.17.so
+lsof      20802             donglai  mem       REG  259,4    398272      396319 /usr/lib64/libpcre.so.1.2.0
+lsof      20802             donglai  mem       REG  259,4     19776      411248 /usr/lib64/libdl-2.17.so
+lsof      20802             donglai  mem       REG  259,4    144792      411133 /usr/lib64/libpthread-2.17.so
+lsof      20802             donglai  mem       REG  259,4 106070960      671957 /usr/lib/locale/locale-archive
+lsof      20802             donglai    0u      CHR  136,6       0t0           9 /dev/pts/6
+lsof      20802             donglai    1w     FIFO    0,8       0t0    50981909 pipe
+lsof      20802             donglai    2u      CHR  136,6       0t0           9 /dev/pts/6
+lsof      20802             donglai    3r      DIR    0,3         0           1 /proc
+lsof      20802             donglai    4r      DIR    0,3         0    50964569 /proc/20802/fd
+lsof      20802             donglai    5w     FIFO    0,8       0t0    50964574 pipe
+lsof      20802             donglai    6r     FIFO    0,8       0t0    50964575 pipe
+grep      20803             donglai  cwd       DIR   0,56      4096   399148901 /net/coxfs01/srv/export/coxfs01/share_root/donglai/lib/malis-pytorch (coxfs01:/srv/export/coxfs01/share_root)
+grep      20803             donglai  rtd       DIR  259,3      4096           2 /
+grep      20803             donglai  txt       REG  259,4    158944     1048826 /usr/bin/grep
+grep      20803             donglai  mem       REG  259,4    164112      393853 /usr/lib64/ld-2.17.so
+grep      20803             donglai  mem       REG  259,4     26254      400626 /usr/lib64/gconv/gconv-modules.cache
+grep      20803             donglai  mem       REG  259,4    398272      396319 /usr/lib64/libpcre.so.1.2.0
+grep      20803             donglai  mem       REG  259,4   2127336      394098 /usr/lib64/libc-2.17.so
+grep      20803             donglai  mem       REG  259,4    144792      411133 /usr/lib64/libpthread-2.17.so
+grep      20803             donglai  mem       REG  259,4 106070960      671957 /usr/lib/locale/locale-archive
+grep      20803             donglai    0r     FIFO    0,8       0t0    50981909 pipe
+grep      20803             donglai    1w      REG   0,56         0   543653891 /net/coxfs01/srv/export/coxfs01/share_root/donglai/lib/malis-pytorch/tmp.log (coxfs01:/srv/export/coxfs01/share_root)
+grep      20803             donglai    2u      CHR  136,6       0t0           9 /dev/pts/6
+lsof      20804             donglai  cwd       DIR   0,56      4096   399148901 /net/coxfs01/srv/export/coxfs01/share_root/donglai/lib/malis-pytorch (coxfs01:/srv/export/coxfs01/share_root)
+lsof      20804             donglai  rtd       DIR  259,3      4096           2 /
+lsof      20804             donglai  txt       REG  259,4    154072     1441872 /usr/sbin/lsof
+lsof      20804             donglai  mem       REG  259,4    164112      393853 /usr/lib64/ld-2.17.so
+lsof      20804             donglai  mem       REG  259,4    155744      393482 /usr/lib64/libselinux.so.1
+lsof      20804             donglai  mem       REG  259,4   2127336      394098 /usr/lib64/libc-2.17.so
+lsof      20804             donglai  mem       REG  259,4    398272      396319 /usr/lib64/libpcre.so.1.2.0
+lsof      20804             donglai  mem       REG  259,4     19776      411248 /usr/lib64/libdl-2.17.so
+lsof      20804             donglai  mem       REG  259,4    144792      411133 /usr/lib64/libpthread-2.17.so
+lsof      20804             donglai  mem       REG  259,4 106070960      671957 /usr/lib/locale/locale-archive
+lsof      20804             donglai    4r     FIFO    0,8       0t0    50964574 pipe
+lsof      20804             donglai    7w     FIFO    0,8       0t0    50964575 pipe

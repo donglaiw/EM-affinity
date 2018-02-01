@@ -7,7 +7,8 @@ from torch.autograd import Variable
 
 import os, sys; sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from em.model.io import load_checkpoint, pth2issac
-from em.model.unet import unet3D, unet3D_m1
+from em.model.unet import unet3D
+from em.model.deploy import unet3D_m1, unet3D_m2
 from em.model.loss import weightedMSE_np, malisWeight, labelWeight
 from em.data.volumeData import VolumeDatasetTest, np_collate
 from em.data.io import getVar, getData, getLabel, getDataAug, cropCentralN, setPred
@@ -41,8 +42,10 @@ def get_args():
                         help='segmentation label')
     parser.add_argument('-snd','--seg-dataset-name',  default='main',
                         help='dataset name in label')
-    parser.add_argument('-ss','--sample-stride', default='', #1@1@1
+    parser.add_argument('-ss','--sample-stride', default='', #1,1,1
                         help='sample stride')
+    parser.add_argument('-bw','--blend-opt', default='-1',
+                        help='blend option')
 
     # model option
     parser.add_argument('-a','--opt-arch', type=str,  default='0-0@0@0-0-0@0',
@@ -90,7 +93,7 @@ def init(args):
     return model_io_size, test_var
 
 
-def get_data(args, model_io_size, test_var):
+def get_data(args, model_io_size, test_var=None):
     # task_opt=0: prediction
     # task_opt=1: error per slice
     # task_opt=2: error per input volume
@@ -99,7 +102,7 @@ def get_data(args, model_io_size, test_var):
     color_clip = [(0.05,0.95), (0.05,0.95), None][args.data_color_opt]
     
     do_shuffle = False # test in serial
-    sample_stride = model_io_size[1] if args.sample_stride=='' else [int(x) for x in args.sample_stride.split('@')] # no overlap
+    sample_stride = model_io_size[1] if args.sample_stride=='' else [int(x) for x in args.sample_stride.split(',')] # no overlap
     extra_pad = 0 # no need to pad
     output_size = None
     if args.task_opt in [0,0.1]: 
@@ -143,6 +146,7 @@ def get_data(args, model_io_size, test_var):
     if args.do_issac==1:
         # need to initiate the test_var with real data
         tmp_data = np.zeros([args.batch_size,1]+list(model_io_size[0]))
+        # do quantization
         tmp_ind = np.floor(np.random.random(args.batch_size)*test_dataset.__len__()).astype(int)
         for i in range(args.batch_size):
             tmp_data[i,:] = test_dataset.__getitem__(tmp_ind[i])[0]
@@ -151,24 +155,30 @@ def get_data(args, model_io_size, test_var):
 
 def get_model(args, test_var):
     # create model
-    if args.model_id == 0:
-        num_filter = [int(x) for x in args.num_filter.split(',')]
-        opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
-        opt_param = [[int(x) for x in y.split('-')] for y in  args.opt_param.split('@')]
-        pool_kernel=tuple([int(x) for x in args.pool_kernel.split(',')])
-        pool_stride=tuple([int(x) for x in args.pool_stride.split(',')])
-        if args.do_issac==1:
+    num_filter = [int(x) for x in args.num_filter.split(',')]
+
+    if args.model_id == -1:#load model directly
+        model = torch.load(args.snapshot)
+    else:
+        if args.model_id == 0:
+            opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
+            opt_param = [[int(x) for x in y.split('-')] for y in  args.opt_param.split('@')]
+            pool_kernel=tuple([int(x) for x in args.pool_kernel.split(',')])
+            pool_stride=tuple([int(x) for x in args.pool_stride.split(',')])
+            if args.do_issac==1:
+                model = unet3D_m1(filters=num_filter)
+            else:
+                model = unet3D(filters=num_filter,opt_arch = opt_arch, opt_param = opt_param,
+                               has_BN = args.has_BN==1, has_dropout = args.has_dropout,
+                               pool_kernel = pool_kernel, pool_stride = pool_stride,
+                               pad_size = args.pad_size, pad_type= args.pad_type)
+        elif args.model_id == 1:
             model = unet3D_m1(filters=num_filter)
-        else:
-            model = unet3D(filters=num_filter,opt_arch = opt_arch, opt_param = opt_param,
-                           has_BN = args.has_BN==1, has_dropout = args.has_dropout,
-                           pool_kernel = pool_kernel, pool_stride = pool_stride,
-                           pad_size = args.pad_size, pad_type= args.pad_type)
+        elif args.model_id == 2:
+            model = unet3D_m2(filters=num_filter, has_BN = args.has_BN==1)
         # load parameter
         cp = load_checkpoint(args.snapshot, 1)
         model.load_state_dict(cp['state_dict'])
-    elif args.model_id == 1:#load model directly
-        model = torch.load(args.snapshot)
 
     if args.num_gpu>0:
         model.cuda()
@@ -178,8 +188,33 @@ def get_model(args, test_var):
             model = pth2issac(model).fuse().quantize(test_var)
 
     if args.num_gpu>1: model = nn.DataParallel(model, range(args.num_gpu)) 
-
     return model
+
+def get_blend(sz,blend_opt):
+    ww = None
+    # do not use blend with exp(), as the minimal (boundary) will have weight=1
+    # hard to remove the boundary effect
+    if blend_opt[0]==0: # sebastian's paper: x(p-x)
+        zv, yv, xv = np.meshgrid(np.linspace(0,1,sz[0]),
+            np.linspace(0,1,sz[1]),np.linspace(0,1,sz[2]), indexing='ij')
+        ww = np.exp(
+            (zv*(1-zv))**blend_opt[1]
+            + (yv*(1-yv))**blend_opt[1]
+            + (xv*(1-xv))**blend_opt[1]) 
+    elif blend_opt[0]==1: # Gaussian: spherical
+        zv, yv, xv = np.meshgrid(np.linspace(-0.5,0.5,sz[0]),
+            np.linspace(-0.5,0.5,sz[1]),np.linspace(-0.5,0.5,sz[2]), indexing='ij')
+        ww = np.exp(-blend_opt[1] *  (zv**2 + yv**2 + xv**2)) 
+    elif blend_opt[0]==2: # tri-linear blend: truncated pyramid
+        # add one more step to avoid 0 weight 
+        zv = 1.0/sz[0]+1-abs(np.linspace(-1,1,sz[0])).reshape(sz[0],1,1)
+        yv = 1.0/sz[1]+1-abs(np.linspace(-1,1,sz[1])).reshape(1,sz[1],1)
+        xv = 1.0/sz[2]+1-abs(np.linspace(-1,1,sz[2])).reshape(1,1,sz[2])
+        ww = zv*yv*xv
+        sz2 = [int(np.floor(x*blend_opt[1])) for x in sz]
+        ww[sz2[0]:-sz2[0],sz2[1]:-sz2[1],sz2[2]:-sz2[2]] = ww[sz2[0],sz2[1],sz2[2]]
+
+    return ww
 
 def main():
     args = get_args()
@@ -197,9 +232,9 @@ def main():
             print '-- start prediction --'
             print '2. load model'
             model = get_model(args, test_var)
+            model.eval()
 
             print '3. start testing'
-            model.eval()
             st0 = time.time()
             st = st0
             # multiple dataset
@@ -207,7 +242,14 @@ def main():
             did = 0
             num_pre=0
             num_total = test_loader.__len__() 
+            blend_opt = [float(x) for x in args.blend_opt.split(',')]
             pred = np.zeros(output_size[0], dtype=np.float32)
+            pred_ww = None
+            ww = None
+            if blend_opt[0]>=0:
+                pred_ww = np.zeros(output_size[0], dtype=np.float32)
+                ww = get_blend(model_io_size[1], blend_opt)
+
             for batch_id, data in enumerate(test_loader):
                 # prediction 
                 num_b = data[3].shape[0]
@@ -216,20 +258,22 @@ def main():
 
                 # put into pred
                 num_bd = np.count_nonzero(data[3][:,0]==did) 
-                setPred(pred, y_pred, model_io_size[1], data[3], num_bd)
+                setPred(pred, y_pred, model_io_size[1], data[3], num_bd, 0, pred_ww, ww)
                 print "finish batch: [%d/%d/%d] " % (did, batch_id-num_pre, batch_num[did])
                 if num_bd == 0 or num_b != num_bd or batch_id==num_total-1: 
                     # need to save previous prediction
                     print 'save dataset: '+str(did+1)+'/'+str(len(batch_num))
+                    if pred_ww is not None:
+                        pred = pred/pred_ww
                     writeh5(args.output, 'main', pred)
-                    et=time.time()
+                    et = time.time()
                     print 'time: '+str(et-st)+' sec'
                     st = time.time()
                     if batch_id < num_total-1: #start new dataset
-                        did+=1
-                        num_pre=batch_id
+                        did += 1
+                        num_pre = batch_id
                         pred = np.zeros(output_size[did], dtype=np.float32)
-                        setPred(pred, y_pred, model_io_size[1], data[3], num_b, num_bd)
+                        setPred(pred, y_pred, model_io_size[1], data[3], num_b, num_bd, pred_ww, ww)
                         print "finish batch: [%d/%d/%d] " % (did, batch_id-num_pre, batch_num[did])
                         sys.stdout.flush()
 

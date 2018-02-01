@@ -32,7 +32,7 @@ def convert_state_dict(state_dict, num_gpu):
             state_dict['module.'+k] = v
             state_dict.pop(k,None)
 
-def load_checkpoint(snapshot, num_gpu):
+def load_checkpoint(snapshot, num_gpu=1):
     import torch
     if isinstance(snapshot, basestring):
         cp = torch.load(snapshot)

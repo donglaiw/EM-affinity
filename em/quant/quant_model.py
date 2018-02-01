@@ -17,8 +17,10 @@ class unet3D_m1_quant(nn.Module): # deployed model-1
             for l in range(self.net.depth):
                 keys_down = self.net.downC[self.net.depth-l-1]._modules.keys()
                 keys_up = self.net.upS[l]._modules.keys()
-                self.reS[l].sf = min(self.net.downC[self.net.depth-l-1]._modules[keys_down[-2]].sf, self.net.upS[l]._modules[keys_up[-1]].sf)
-                print l,self.net.downC[self.net.depth-l-1]._modules[keys_down[-2]].sf, self.net.upS[l]._modules[keys_up[-1]].sf
+                #self.reS[l].sf = min(self.net.downC[self.net.depth-l-1]._modules[keys_down[-2]].sf, self.net.upS[l]._modules[keys_up[-1]].sf)
+                # quantize after leaky relu
+                self.reS[l].sf = min(self.net.downC[self.net.depth-l-1]._modules[keys_down[-3]].sf, self.net.upS[l]._modules[keys_up[-1]].sf)
+                print l,self.net.downC[self.net.depth-l-1]._modules[keys_down[-3]].sf, self.net.upS[l]._modules[keys_up[-1]].sf
 
     def forward(self, x):
         if self.rescale_skip == '':
