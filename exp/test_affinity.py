@@ -46,6 +46,8 @@ def get_args():
                         help='sample stride')
     parser.add_argument('-bw','--blend-opt', default='-1',
                         help='blend option')
+    parser.add_argument('-ta','--test-aug', type=int, default=0,
+                        help='test augmentation')
 
     # model option
     parser.add_argument('-a','--opt-arch', type=str,  default='0-0@0@0-0-0@0',
@@ -110,6 +112,17 @@ def get_data(args, model_io_size, test_var=None):
         dirName = args.input.split('@')
         test_data = getData(dirName, args.data_name, args.data_dataset_name)
         test_label = None
+        if args.test_aug != 0: # test augmentation
+            augStr = '{0:04b}'.format(args.test_aug)
+            for did in range(len(test_data)):
+                if augStr[0] == '1':
+                    test_data[did] = test_data[did][:,::-1,:,:]
+                if augStr[1] == '1':
+                    test_data[did] = test_data[did][:,:,::-1,:]
+                if augStr[2] == '1':
+                    test_data[did] = test_data[did][:,:,:,::-1]
+                if augStr[3] == '1':
+                    test_data[did] = test_data[did].transpose((0,1,3,2))
 
         out_data_size = model_io_size[0]
         do_seg = False
@@ -117,6 +130,7 @@ def get_data(args, model_io_size, test_var=None):
         output_size = [[3]+list(test_data[x].shape[1:]-(model_io_size[0]-model_io_size[1])) for x in range(len(test_data))]
         if args.task_opt in [0.1]:
             do_shuffle = True
+
     elif args.task_opt in [1,2]: 
         # load test affinity prediction 
         dirName = args.output.split('@')
