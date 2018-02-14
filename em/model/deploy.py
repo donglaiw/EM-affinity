@@ -90,13 +90,14 @@ class unet3D_m1(nn.Module): # deployed Toufiq model
         return F.sigmoid(self.final(x))
 
 def unet_m2_conv(in_num, out_num, kernel_size, pad_size, stride_size, has_bias, has_BN, has_relu):
+    layers = []
     for i in range(len(in_num)):
-        layers = [nn.Conv3d(in_num[i], out_num[i], kernel_size=kernel_size[i], padding=pad_size[i], stride=stride_size[i], bias=has_bias[i])] 
-        if has_BN:
+        layers.append(nn.Conv3d(in_num[i], out_num[i], kernel_size=kernel_size[i], padding=pad_size[i], stride=stride_size[i], bias=has_bias[i])) 
+        if has_BN[i]:
             layers.append(nn.BatchNorm3d(out_num[i]))
-        if has_relu==0:
+        if has_relu[i]==0:
             layers.append(nn.ReLU(inplace=True))
-        elif has_relu==1:
+        elif has_relu[i]==1:
             layers.append(nn.ELU(inplace=True))
     return nn.Sequential(*layers)
 
@@ -136,12 +137,12 @@ class unet3D_m2(nn.Module): # deployed PNI model
         
         self.downC = nn.ModuleList(
                 [unet_m2_conv([in_num], [filters[0]], [(1,5,5)], [(0,2,2)], [1], [False], [has_BN], [has_relu])]
-                + [unet_m2_BasicBlock(filters[x], filters[x+1], has_BN, has_relu)
+                + [unet_m2_BasicBlock(filters[x], filters[x+1], True, has_BN, has_relu)
                       for x in range(self.res_num)]) 
         self.downS = nn.ModuleList(
                 [nn.MaxPool3d((1,2,2), (1,2,2))
             for x in range(self.res_num+1)]) 
-        self.center = unet_m2_BasicBlock(filters[-2], filters[-1], has_BN, has_relu)
+        self.center = unet_m2_BasicBlock(filters[-2], filters[-1], True, has_BN, has_relu)
         self.upS = nn.ModuleList(
             [nn.Sequential(
                 nn.ConvTranspose3d(filters[self.res_num+1-x], filters[self.res_num+1-x], (1,2,2), (1,2,2), groups=filters[self.res_num+1-x], bias=False),
@@ -152,7 +153,7 @@ class unet3D_m2(nn.Module): # deployed PNI model
             self.upS[x]._modules['0'].weight.data.fill_(1.0)
 
         self.upC = nn.ModuleList(
-            [unet_m2_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], has_BN, has_relu)
+            [unet_m2_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], True, has_BN, has_relu)
                 for x in range(self.res_num)]
             + [nn.Conv3d(filters[0], out_num, kernel_size=(1,5,5), stride=1, padding=(0,2,2), bias=True)]) 
 

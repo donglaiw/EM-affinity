@@ -36,13 +36,11 @@ def seg2overlay(seg):
     cmapb = zeros(max_id+1)
     
     for i in range(len(useg_ids)):
-    useg_id = useg_ids[i]
-    rv,gv,bv = get_random_color()
-    
-    cmapr[useg_id] = int(rv)
-    cmapg[useg_id] = int(gv)
-    cmapb[useg_id] = int(bv)
-    
+        useg_id = useg_ids[i]
+        rv,gv,bv = get_random_color()
+        cmapr[useg_id] = int(rv)
+        cmapg[useg_id] = int(gv)
+        cmapb[useg_id] = int(bv)
     return cmapr, cmapg, cmapb
   
 
@@ -63,7 +61,7 @@ class Viewer:
     for i in range(len(filelist)):
         tmparr = array(Image.open(filelist[i]))
         if len(tmparr.shape)>2:
-        tmparr=tmparr[:,:,0]
+            tmparr=tmparr[:,:,0]
         self.images[i,:,:] = tmparr
         
         #display first image
@@ -77,12 +75,9 @@ class Viewer:
         
         fib_im = self.images[0,:,:]
         
-    self.alpha = 0.3
-    self.prev_alpha = self.alpha
-    
-    im = self.blend(fib_im, self.segvol[0,:,:])
-    
-        
+        self.alpha = 0.3
+        self.prev_alpha = self.alpha
+        im = self.blend(fib_im, self.segvol[0,:,:])
         
         self.size = im.size
         self.tkimage = ImageTk.PhotoImage(im)
@@ -121,18 +116,12 @@ class Viewer:
     master.bind_all('<Key>', self.keypressed)
         
     def blend(self, fib_im, seg_im):
-      
-    #seg_im1d = seg_im.ravel()
-    #fib_im1d = fib_im.ravel()
-    #useg_ids = unique(seg_im1d)
-      
-    #pdb.set_trace()
-    mask = seg_im>0 
-    masked_im = multiply(fib_im,1-mask)
-    
-    overlayr = multiply(self.cmapr[seg_im],mask)
-    overlayg = multiply(self.cmapg[seg_im],mask)
-    overlayb = multiply(self.cmapb[seg_im],mask)
+        mask = seg_im>0 
+        masked_im = multiply(fib_im,1-mask)
+        
+        overlayr = multiply(self.cmapr[seg_im],mask)
+        overlayg = multiply(self.cmapg[seg_im],mask)
+        overlayb = multiply(self.cmapb[seg_im],mask)
         
         imarr = (1-self.alpha)*fib_im +  self.alpha*(overlayr) + self.alpha*masked_im
         imarr = expand_dims(imarr, axis = 2)
@@ -180,100 +169,96 @@ class Viewer:
         self.nextframe(imgnum=self.evar.get())
     
     def highlight(self, event):
-      
-    highlighted_seg_id = self.segvol[self.index, event.y, event.x]
-    if highlighted_seg_id == 0:
-        return
-    #pdb.set_trace()
+        highlighted_seg_id = self.segvol[self.index, event.y, event.x]
+        if highlighted_seg_id == 0:
+            return
     
-    if (self.curr_highlighted >= 0): # restore segment already highlighted
-        self.cmapb[self.curr_highlighted] = self.highlight_prev_colorb
-        self.cmapg[self.curr_highlighted] = self.highlight_prev_colorg
-        self.cmapr[self.curr_highlighted] = self.highlight_prev_colorr
-    
-    if (self.curr_highlighted == highlighted_seg_id):
-        self.curr_highlighted = -1
-        self.nextframe(0)
-        return
+        if (self.curr_highlighted >= 0): # restore segment already highlighted
+            self.cmapb[self.curr_highlighted] = self.highlight_prev_colorb
+            self.cmapg[self.curr_highlighted] = self.highlight_prev_colorg
+            self.cmapr[self.curr_highlighted] = self.highlight_prev_colorr
         
-    # highlight new segment
-    self.curr_highlighted = highlighted_seg_id  
-    self.highlight_prev_colorr = self.cmapr[self.curr_highlighted]
-    self.highlight_prev_colorg = self.cmapg[self.curr_highlighted]
-    self.highlight_prev_colorb = self.cmapb[self.curr_highlighted]
-    print "Highlighted region: {0}".format(self.curr_highlighted)
-    self.cmapr[self.curr_highlighted] = 255
-    self.cmapg[self.curr_highlighted] = 255
-    self.cmapb[self.curr_highlighted] = 255
-    
-    self.nextframe(0)
+        if (self.curr_highlighted == highlighted_seg_id):
+            self.curr_highlighted = -1
+            self.nextframe(0)
+            return
+            
+        # highlight new segment
+        self.curr_highlighted = highlighted_seg_id  
+        self.highlight_prev_colorr = self.cmapr[self.curr_highlighted]
+        self.highlight_prev_colorg = self.cmapg[self.curr_highlighted]
+        self.highlight_prev_colorb = self.cmapb[self.curr_highlighted]
+        print "Highlighted region: {0}".format(self.curr_highlighted)
+        self.cmapr[self.curr_highlighted] = 255
+        self.cmapg[self.curr_highlighted] = 255
+        self.cmapb[self.curr_highlighted] = 255
+        
+        self.nextframe(0)
     
     def exclusive_highlight(self):
-    #pdb.set_trace()
-    self.cmapr = zeros(self.cmapr.shape)
-    self.cmapg = zeros(self.cmapg.shape)
-    self.cmapb = zeros(self.cmapb.shape)
-    
-    print "Highlighted region: {0}".format(self.curr_highlighted)
-    self.cmapr[self.curr_highlighted] = 255
-    self.cmapg[self.curr_highlighted] = 255
-    self.cmapb[self.curr_highlighted] = 0
-    
-    self.nextframe(0)
+        self.cmapr = zeros(self.cmapr.shape)
+        self.cmapg = zeros(self.cmapg.shape)
+        self.cmapb = zeros(self.cmapb.shape)
+        
+        print "Highlighted region: {0}".format(self.curr_highlighted)
+        self.cmapr[self.curr_highlighted] = 255
+        self.cmapg[self.curr_highlighted] = 255
+        self.cmapb[self.curr_highlighted] = 0
+        
+        self.nextframe(0)
     
     def keypressed(self,event):
-    if event.char == 'd':
-        self.nextframe(1)
-    elif event.char == 'u':
-        self.nextframe(-1)
-    elif event.char =='f':
-        self.toggle_alpha()
-    elif event.char =='r':
-        self.exclusive_highlight()
-    elif event.char =='s':
-        self.save_image()
-    elif event.char =='m':
-        self.save_all_images()
-    elif event.char =='+':
-        self.increase_alpha()
-    elif event.char =='-':
-        self.decrease_alpha()
+        if event.char == 'd':
+            self.nextframe(1)
+        elif event.char == 'u':
+            self.nextframe(-1)
+        elif event.char =='f':
+            self.toggle_alpha()
+        elif event.char =='r':
+            self.exclusive_highlight()
+        elif event.char =='s':
+            self.save_image()
+        elif event.char =='m':
+            self.save_all_images()
+        elif event.char =='+':
+            self.increase_alpha()
+        elif event.char =='-':
+            self.decrease_alpha()
 
     def increase_alpha(self):
-    self.alpha = self.alpha*1.25
-    self.nextframe(0)
+        self.alpha = self.alpha*1.25
+        self.nextframe(0)
+
     def decrease_alpha(self):
-    self.alpha = self.alpha*0.8
-    self.nextframe(0)
+        self.alpha = self.alpha*0.8
+        self.nextframe(0)
     
     def toggle_alpha(self):
-    if self.alpha > 0:
-       self.prev_alpha = self.alpha
-       self.alpha = 0
-    else:
-       self.alpha = self.prev_alpha
-
-    self.nextframe(0)                   
+        if self.alpha > 0:
+           self.prev_alpha = self.alpha
+           self.alpha = 0
+        else:
+           self.alpha = self.prev_alpha
+        self.nextframe(0)                   
 
     def save_image(self):
-    idxstr = str(self.index)
-    idxstr = idxstr.rjust(5,'0')
+        idxstr = str(self.index)
+        idxstr = idxstr.rjust(5,'0')
         fib_im = self.images[self.index,:,:]
-    im = self.blend(fib_im, self.segvol[self.index,:,:])
-    imname = 'composite.'+ idxstr +'.png'
-    im.save(imname)
+        im = self.blend(fib_im, self.segvol[self.index,:,:])
+        imname = 'composite.'+ idxstr +'.png'
+        im.save(imname)
     
     def save_all_images(self):
-    #pdb.set_trace()
-    output_dir='output-images'
-    if not os.path.exists(output_dir): os.makedirs(output_dir)
-    for index in range(self.images.shape[0]):
-        idxstr = str(index)
-        idxstr = idxstr.rjust(5,'0')
-        fib_im = self.images[index,:,:]
-        im = self.blend(fib_im, self.segvol[index,:,:])
-        imname = output_dir+ '/composite.'+ idxstr +'.png'
-        im.save(imname)
+        output_dir='output-images'
+        if not os.path.exists(output_dir): os.makedirs(output_dir)
+        for index in range(self.images.shape[0]):
+            idxstr = str(index)
+            idxstr = idxstr.rjust(5,'0')
+            fib_im = self.images[index,:,:]
+            im = self.blend(fib_im, self.segvol[index,:,:])
+            imname = output_dir+ '/composite.'+ idxstr +'.png'
+            im.save(imname)
         
 # --------------------------------------------------------------------
 if __name__ == "__main__":
@@ -282,7 +267,6 @@ if __name__ == "__main__":
         print "Usage: ShowSeq.py  h5file h5_dataset Image_path/*.png"
         sys.exit()
     filelist = sys.argv[3:]
-    
     h5filename = sys.argv[1]
     h5dataset = sys.argv[2]
     

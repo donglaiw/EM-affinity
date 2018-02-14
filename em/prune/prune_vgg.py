@@ -11,9 +11,10 @@ import argparse
 from operator import itemgetter
 from heapq import nsmallest
 import time
+
 # 1. pruner
-class FilterPrunner:
-	def __init__(self, model):
+class FilterPrunner(object):
+    def __init__(self, model):
 		self.model = model
 		self.setup()
     
