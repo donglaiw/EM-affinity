@@ -1,9 +1,10 @@
-# malis-pytorch: Malis layer implemented in pytorch
-## MalisLoss Intallation
-1. Install library dependencies (make sure header files are on CPATH): cython, boost
-2. compile: ./make.sh
+# Pytorch Package for Unet3D 
+## Installation
+```
+python setup.py install
+```
 
-## Pytorch Package for Unet3D 
+##
 1. Basic module 
     - data/: dataLoader for volume data
     - model/: unet3D (block: vgg, residual)
