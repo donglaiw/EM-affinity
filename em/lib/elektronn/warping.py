@@ -10,11 +10,6 @@ import matplotlib.pyplot as plt
 
 import numpy as np
 
-# try:
-#     from ._warping import warp2dFast, warp3dFast, _warp2dFastLab, _warp3dFastLab
-# except ImportError:
-#     raise RuntimeError('_warping.so Cython extension not found.\n'
-#                        'Please run setup.py or manually cythonize _warping.pyx.')
 from _warping import warp2dFast, warp3dFast, _warp2dFastLab, _warp3dFastLab
 
 
@@ -215,16 +210,10 @@ def getRequiredPatchSize(patch_size, rot, shear, scale, stretch, twist=None):
     return req_size.astype(np.int), eff_size.astype(np.int), left_exc.astype(np.int)
 
 
-def getWarpParams(patch_size, amount=1.0):
+def getWarpParams(patch_size, rot_max = 15, shear_max = 3, scale_max = 1.1, stretch_max = 0.1):
     """
     To be called from CNNData. Get warping parameters + required warping input patch size.
     """
-    if amount > 1:
-        print 'WARNING: warpAugment amount > 1 this requires more than 1.4 bigger patches before warping'
-    rot_max = 15 * amount
-    shear_max = 3 * amount
-    scale_max = 1.1 * amount
-    stretch_max = 0.1 * amount
     n_dim = len(patch_size)
 
     shear = shear_max * 2 * (np.random.rand() - 0.5)
@@ -242,7 +231,7 @@ def getWarpParams(patch_size, amount=1.0):
 
     req_size, _, _ = getRequiredPatchSize(patch_size, rot, shear, scale,
                                           stretch, twist)
-    return req_size, rot, shear, scale, stretch, twist
+    return [req_size, rot, shear, scale, stretch, twist]
 
 
 def test():

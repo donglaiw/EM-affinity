@@ -1,7 +1,8 @@
 import sys
 import numpy as np
-from ..lib import malis_core as malisL
 import h5py
+
+from em.lib.malis import malis_core as malisL
 
 # ---------------------
 # 1. utility layers

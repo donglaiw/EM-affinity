@@ -8,41 +8,42 @@ import torch.utils.data
 import os, sys; sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from em.model.io import load_checkpoint,save_checkpoint
 from em.model.unet import unet3D
-from em.model.deploy import unet3D_m1, unet3D_m2
+from em.model.deploy import unet3D_m1, unet3D_m2, unet3D_m2_v2
 from em.model.optim import decay_lr
 from em.model.loss import weightedMSE,malisWeight,labelWeight
 from em.data.volumeData import VolumeDatasetTrain, VolumeDatasetTest, np_collate
-from em.data.io import getVar, getData, getLabel, getDataAug, cropCentralN
-#from em.util.vis_data import visSliceSeg
+from em.data.io import getVar, getImg, getLabel, cropCentralN
+from em.data.augmentation import DataAugment
+#from em.util.vis_img import visSliceSeg
 
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
     # I/O
-    parser.add_argument('-m','--model-id',  type=int, default=0,
+    parser.add_argument('-m','--model-id',  type=float, default=0,
                         help='model id')
     parser.add_argument('-t','--train',  default='/n/coxfs01/donglai/malis_trans/data/ecs-3d/ecs-gt-3x6x6/',
                         help='input folder (train)')
     parser.add_argument('-v','--val',  default='',
                         help='input folder (test)')
-    parser.add_argument('-dn','--data-name',  default='im_uint8.h5',
+    parser.add_argument('-dn','--img-name',  default='im_uint8.h5',
                         help='image data')
     parser.add_argument('-ln','--seg-name',  default='seg-groundtruth2-malis.h5',
                         help='segmentation label')
-    parser.add_argument('-dnv','--data-name-val',  default='im_uint8.h5',
+    parser.add_argument('-dnv','--img-name-val',  default='im_uint8.h5',
                         help='image data for val')
     parser.add_argument('-lnv','--seg-name-val',  default='seg-groundtruth2-malis.h5',
                         help='segmentation label for val')
+    parser.add_argument('-dnd','--img-dataset-name',  default='main',
+                        help='dataset name in data')
     parser.add_argument('-lnd','--seg-dataset-name',  default='main',
                         help='dataset name in label')
-    parser.add_argument('-dnd','--data-dataset-name',  default='main',
-                        help='dataset name in data')
     parser.add_argument('-o','--output', default='result/train/',
                         help='output path')
     parser.add_argument('-s','--snapshot',  default='',
                         help='pre-train snapshot path')
 
     # model option
-    parser.add_argument('-ma','--opt-arch', type=str,  default='0-0@0@0-0-0@0',
+    parser.add_argument('-ma','--opt-arch', type=str,  default='0,0@0@0,0,0@0',
                         help='model type')
     parser.add_argument('-mp','--opt-param', type=str,  default='0@0@0@0',
                         help='model param')
@@ -64,16 +65,20 @@ def get_args():
                         help='use dropout')
     parser.add_argument('-it','--init', type=int,  default=-1,
                         help='model initialization type')
+
     # data option
-    parser.add_argument('-dc','--data-color-opt', type=int,  default=2,
-                        help='data color aug type')
-    parser.add_argument('-dr','--data-rotation-opt', type=int,  default=0,
-                        help='data rotation aug type')
+    parser.add_argument('-ao','--aug-opt', type=str,  default='1@-1@0@5',
+                        help='data aug type')
+    parser.add_argument('-apw','--aug-param-warp', type=str,  default='15@3@1.1@0.1',
+                        help='data warp aug parameter')
+    parser.add_argument('-apc','--aug-param-color', type=str,  default='0.95,1.05@-0.15,0.15@0.5,2@0,1',
+                        help='data color aug parameter')
+
+    # optimization option
     parser.add_argument('-l','--loss-opt', type=int, default=0,
                         help='loss type')
     parser.add_argument('-lw','--loss-weight-opt', type=float, default=2.0,
                         help='weighted loss type')
-    # optimization option
     parser.add_argument('-lr', type=float, default=0.0001,
                         help='learning rate')
     parser.add_argument('-lr_decay', default='inv,0.0001,0.75',
@@ -108,53 +113,70 @@ def init(args):
     train_vars = getVar(args.batch_size, model_io_size, [True, True, not (args.loss_opt == 0 and args.loss_weight_opt == 0)])
     return model_io_size, train_vars
 
-def get_data(args, model_io_size, opt='train'):
+def get_img(args, model_io_size, opt='train'):
     # two dataLoader, can't be both multiple-cpu (pytorch issue)
     if opt=='train':
-        dirName = args.train.split('@')
-        numWorker = args.num_cpu
-        data_name = args.data_name
-        seg_name = args.seg_name
+        dir_name = args.train.split('@')
+        num_worker = args.num_cpu
+        img_name = args.img_name.split('@')
+        seg_name = args.seg_name.split('@')
     else:
-        dirName = args.val.split('@')
-        numWorker = 1
-        data_name = args.data_name_val
-        seg_name = args.seg_name_val
-    if len(dirName[0])==0:
+        dir_name = args.val.split('@')
+        num_worker = 1
+        img_name = args.img_name_val.split('@')
+        seg_name = args.seg_name_val.split('@')
+    img_dataset_name = args.img_dataset_name.split('@')
+    seg_dataset_name = args.seg_dataset_name.split('@')
+
+    # should be either one or the same as dir_name
+    seg_name = [dir_name[x]+seg_name[0] for x in range(len(dir_name))] \
+            if len(seg_name) == 1 else [dir_name[x]+seg_name[x] for x in range(len(dir_name))]
+    img_name = [dir_name[x]+img_name[0] for x in range(len(dir_name))] \
+            if len(img_name) == 1 else [dir_name[x]+img_name[x] for x in range(len(dir_name))]
+    seg_dataset_name = seg_dataset_name*len(dir_name) if len(seg_dataset_name) == 1 else seg_dataset_name
+    img_dataset_name = img_dataset_name*len(dir_name) if len(img_dataset_name) == 1 else img_dataset_name
+
+    if len(dir_name[0])==0: # don't load data
         return None
 
     # 1. load data
+    # make sure img and label have the same size
+    # assume img and label have the same center
     suf_aff = '_aff'+args.opt_param
-    train_data = getData(dirName, data_name , args.data_dataset_name)
-    train_label = getLabel(dirName, seg_name, suf_aff, args.seg_dataset_name)
-    # create extra-pad
-    train_data, train_label = cropCentralN(train_data, train_label, model_io_size)
-    do_seg = args.loss_opt==1 # need seg if do malis loss
+    train_img = getImg(img_name, img_dataset_name)
+    train_label = getLabel(seg_name, seg_dataset_name, suf_aff)
+    train_img, train_label = cropCentralN(train_img, train_label)
 
-    # 2. get dataLoader
-    color_scale, color_shift, color_clip, rot = getDataAug(opt, args.data_color_opt, args.data_rotation_opt)
+    # 2. get dataAug
+    aug_opt = [int(x) for x in args.aug_opt.split('@')]
+    aug_param_warp = [float(x) for x in args.aug_param_warp.split('@')]
+    aug_param_color = [[float(y) for y in x.split(',')] for x in args.aug_param_color.split('@')]
+    data_aug = DataAugment(aug_opt, aug_param_warp, aug_param_color)
 
     # if malis, then need seg
-    dataset = VolumeDatasetTrain(train_data, train_label, do_seg,
-                           reflect=rot[0], swapxy=rot[1], color_scale=color_scale,color_shift=color_shift,clip=color_clip,
-                           out_data_size=model_io_size[0],out_label_size=model_io_size[1])
+    do_seg = args.loss_opt==1 # need seg if do malis loss
+    import pdb; pdb.set_trace()
+    dataset = VolumeDatasetTrain(train_img, train_label, do_seg, np.inf, \
+                                 model_io_size[0], model_io_size[1], data_aug=data_aug)
     # to have evaluation during training (two dataloader), has to set num_worker=0
-    data_loader =  torch.utils.data.DataLoader(
+    img_loader =  torch.utils.data.DataLoader(
             dataset, batch_size=args.batch_size, shuffle=True, collate_fn = np_collate,
-            num_workers=numWorker, pin_memory=True)
-    return data_loader
+            num_workers=num_worker, pin_memory=True)
+    return img_loader
 
 def get_model(args, model_io_size):
     # 1. get model
     num_filter = [int(x) for x in args.num_filter.split(',')]
     if args.model_id==0: # flexible framework
-        opt_arch = [[int(x) for x in y.split('-')] for y in  args.opt_arch.split('@')]
-        opt_param = [[int(x) for x in y.split('-')] for y in  args.opt_param.split('@')]
+        opt_arch = [[int(x) for x in y.split(',')] for y in  args.opt_arch.split('@')]
+        opt_param = [[int(x) for x in y.split(',')] for y in  args.opt_param.split('@')]
         model = unet3D(filters=num_filter, opt_arch = opt_arch, opt_param = opt_param,
                        has_BN = args.has_BN==1, has_dropout = args.has_dropout, relu_slope = args.relu_slope,
                        pad_size = args.pad_size, pad_type= args.pad_type)
     elif args.model_id==2: # _m2
         model = unet3D_m2(filters=num_filter, has_BN = args.has_BN==1)
+    elif args.model_id==2.1: # _m2_v2
+        model = unet3D_m2_v2(filters=num_filter, has_BN = args.has_BN==1)
 
 
     # 2. load previous model weight
@@ -224,8 +246,8 @@ def main():
     model_io_size, train_vars = init(args) 
 
     print '1. setup data'
-    train_loader = get_data(args, model_io_size, 'train')
-    test_loader = get_data(args, model_io_size, 'val') if args.val != '' else None
+    #train_loader = get_img(args, model_io_size, 'train')
+    #test_loader = get_img(args, model_io_size, 'val') if args.val != '' else None
 
     print '2. setup model'
     model, loss_w, pre_epoch = get_model(args, model_io_size)
@@ -273,10 +295,10 @@ def main():
         t3 = time.time()
         # Validation error
         if test_iter is not None and iter_id % 5 == 0:
-            test_data = next(test_iter)
-            #visSliceSeg(test_data[0], test_data[2], offset=[14,44,44],outN='result/db/test_'+str(iter_id)+'_'+str(test_data[3][0][0])+'.png', frame_id=0)
-            train_vars[0].data.copy_(torch.from_numpy(test_data[0]))
-            test_loss = forward(model, test_data, train_vars, loss_w, args).data[0]
+            test_img = next(test_iter)
+            #visSliceSeg(test_img[0], test_img[2], offset=[14,44,44],outN='result/db/test_'+str(iter_id)+'_'+str(test_img[3][0][0])+'.png', frame_id=0)
+            train_vars[0].data.copy_(torch.from_numpy(test_img[0]))
+            test_loss = forward(model, test_img, train_vars, loss_w, args).data[0]
 
         # Print log
         logger.write("[Volume %d] train_loss=%0.3f test_loss=%0.3f lr=%.5f ModelTime=%.2f TotalTime=%.2f\n" % (volume_id,train_loss.data[0],test_loss,optimizer.param_groups[0]['lr'],t3-t2,t3-t1))

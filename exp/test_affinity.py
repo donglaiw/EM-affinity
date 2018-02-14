@@ -5,13 +5,12 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-import os, sys; sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from em.model.io import load_checkpoint, pth2issac
 from em.model.unet import unet3D
-from em.model.deploy import unet3D_m1, unet3D_m2
+from em.model.deploy import unet3D_m1, unet3D_m2, unet3D_m2_v2
 from em.model.loss import weightedMSE_np, malisWeight, labelWeight
 from em.data.volumeData import VolumeDatasetTest, np_collate
-from em.data.io import getVar, getData, getLabel, getDataAug, cropCentralN, setPred
+from em.data.io import getVar, getData, getLabel, cropCentralN, setPred
 from em.util.misc import writeh5, writetxt
 
 def get_args():

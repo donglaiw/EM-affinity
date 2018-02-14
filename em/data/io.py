@@ -1,9 +1,9 @@
 # utility function to load data
-# train-L2: data+label
-# train-malis: data+label+seg
-# test-pred: data
-# test-err-L2: data+label
-# test-err-malis: data+label+seg
+# train-L2: img+label
+# train-malis: img+label+seg
+# test-pred: img
+# test-err-L2: img+label
+# test-err-malis: img+label+seg
 import numpy as np
 import h5py
 import os
@@ -33,7 +33,7 @@ def getVar(batch_size, model_io_size, do_input=[True, False, False]):
     import torch
     from torch.autograd import Variable
     input_vars = [None] *3  
-    # data
+    # img
     input_vars[0] = Variable(torch.zeros(batch_size, 1, model_io_size[0][0], model_io_size[0][1], model_io_size[0][2]).cuda(), requires_grad=False)
     # label
     if do_input[1]:
@@ -43,88 +43,100 @@ def getVar(batch_size, model_io_size, do_input=[True, False, False]):
     return input_vars
 
 
-def getData(dirName, data_name, data_dataset_name):
-    d_data = [None]*len(dirName)
-    for i in range(len(dirName)):
-        if data_name[-3:] == '.h5' or data_name[-3:] == 'hdf':
-            if '/' in data_dataset_name:
-                tmp = data_dataset_name.split('/')
-                d_data[i] =  np.array(h5py.File(dirName[i]+'/'+data_name,'r')[tmp[0]][tmp[1]],dtype=np.float32)[None,:]
+def getImg(img_name, img_dataset_name):
+    d_img = [None]*len(img_name)
+    for i in range(len(img_name)):
+        if img_name[i][-3:] == '.h5' or img_name[i][-3:] == 'hdf':
+            if '/' in img_dataset_name[i]:
+                tmp = img_dataset_name[i].split('/')
+                d_img[i] =  np.array(h5py.File(img_name[i], 'r')[tmp[0]][tmp[1]],dtype=np.float32)[None,:]
             else:
-                d_data[i] =  np.array(h5py.File(dirName[i]+'/'+data_name,'r')[data_dataset_name],dtype=np.float32)[None,:]
-        elif data_name[-4:] == '.pkl':
-            d_data[i] =  np.array(pickle.load(dirName[i]+data_name,'rb'),dtype=np.float32)[None,:]
+                d_img[i] =  np.array(h5py.File(img_name[i], 'r')[img_dataset_name[i]],dtype=np.float32)[None,:]
+        elif img_name[i][-4:] == '.pkl':
+            d_img[i] =  np.array(pickle.load(img_name[i], 'rb'),dtype=np.float32)[None,:]
         else: # folder of images
             import glob
             from scipy import misc
-            imN=sorted(glob.glob(dirName[i]+'*'+data_name))
+            imN=sorted(glob.glob(img_name[i]))
             im0 =  misc.imread(imN[0])
-            d_data[i] =  np.zeros((len(imN),im0.shape[1],im0.shape[0]),dtype=np.float32)
+            d_img[i] =  np.zeros((len(imN),im0.shape[1],im0.shape[0]),dtype=np.float32)
             for j in range(len(imN)):
-                d_data[i][j] = misc.imread(imN[j]).astype(np.float32)
-        if d_data[i].max()>5: # normalize uint8 to 0-1
-            d_data[i]=d_data[i]/(2.**8)
-    return d_data
+                d_img[i][j] = misc.imread(imN[j]).astype(np.float32)
+        if d_img[i].max()>5: # normalize uint8 to 0-1
+            d_img[i]=d_img[i]/(2.**8)
+    return d_img
 
-def getLabel(dirName, seg_name, suf_aff, seg_dataset_name):
-    label_name = seg_name[:-3]+suf_aff+'.h5' if len(seg_name)>3 else ''
-    d_label = [None]*len(dirName)
-    for i in range(len(dirName)):
-        # load whole aff -> remove offset for label, pad a bit for rotation augmentation
-        if os.path.exists(dirName[i] + label_name):
-            d_label[i] = np.array(h5py.File(dirName[i] + label_name,'r')['main'])
-        else: # pre-compute for faster i/o
-            d_seg = np.array(h5py.File(dirName[i] + seg_name, 'r')[seg_dataset_name])
-            d_label[i] = segToAffinity(d_seg)
-            writeh5(dirName[i] + label_name, 'main', d_label[i])
+def getLabel(seg_name, seg_dataset_name, suf_aff):
+    # seg_name: segmentation
+    # label_name: affinity
+    if len(seg_name) == 0:
+        d_label = None
+    else:
+        d_label = [None]*len(seg_name)
+        for i in range(len(seg_name)):
+            label_name = seg_name[i][:-3]+suf_aff+'.h5' if len(seg_name[i])>3 else ''
+            # load whole aff -> remove offset for label, pad a bit for rotation augmentation
+            if os.path.exists(label_name):
+                d_label[i] = np.array(h5py.File(label_name,'r')['main'])
+            else: # pre-compute for faster i/o
+                d_seg = np.array(h5py.File(seg_name[i], 'r')[seg_dataset_name[i]])
+                d_label[i] = segToAffinity(d_seg)
+                writeh5(label_name, 'main', d_label[i])
     return d_label
 
-def getDataAug(opt, data_color_opt=0, data_rotation_opt=0):
-    # default: no aug
-    color_scale=None; color_shift=None; color_clip=None; rot=[(0,0,0),False]
-    if opt=='train':
-        color_scale = [(0.8,1.2), (0.9,1.1), None][data_color_opt]
-        color_shift = [(-0.2,0.2), (-0.1,0.1), None][data_color_opt]
-        color_clip = [(0.05,0.95), (0.05,0.95), None][data_color_opt]
-        rot = [[(1,1,1),True],[(0,0,0),False]][data_rotation_opt]
-    elif opt=='test':
-        color_clip = [(0.05,0.95), (0.05,0.95), None][data_color_opt]
-    return color_scale, color_shift, color_clip, rot
+# crop seg/label correctly
+# img and label may have different sizes
+def cropCentralN(img, label, offset=np.array([0,0,0])):
+    # multiple datasets
+    for i in range(len(img)):
+        img[i], label[i] = cropCentral(img[i], label[i], offset)
+    return img, label
 
-# crop data/label correctly
-def cropCentralN(data,label,offset,extraPad=True):
-    for i in range(len(data)):
-        data[i], label[i] = cropCentral(data[i], label[i], offset, extraPad)
-    # need return, as label can have new address
-    return data,label
-
-def cropCentral(data,label,offset,extraPad=True):
-    if len(offset)==2:
-        offset = np.abs(offset[0]-offset[1])/2
-    # CxDxWxH
-    if extraPad: # as z axis is precious, we pad data by 1 (used for affinity flip, not eval)
-        label = np.lib.pad(label,((0,0),(1,1),(1,1),(1,1)),mode='reflect')
-
-    sz_diff = np.array(data.shape)-np.array(label.shape)
-    sz_offset = sz_diff[1:]//2 # floor
-    sz_offset2 = sz_diff[1:]-sz_diff[1:]//2 #ceil
-    if extraPad: # extra padding for data augmentation affinity
-        sz_offset+=1
-        sz_offset2+=1
-    if any(sz_offset-offset) or any(sz_offset-offset):
+def cropCentral(img, label, offset=np.array([0,0,0])):
+    # input size: img >= label
+    # output size: same for warp augmentation 
+    # data format: CxDxWxH
+    img_sz = np.array(img.shape)
+    label_sz = np.array(label.shape) 
+    if any(img_sz[1:]!=label_sz[1:]):
+        sz_diff = img_sz-label_sz
+        sz_offset = abs(sz_diff[1:]) // 2 # floor
         # z axis
-        if offset[0] > sz_offset2[0]: # label is bigger
-            label=label[:,offset[0]-sz_offset[0]:label.shape[1]-(offset[0]-sz_offset2[0])]
+        if sz_diff[1] < 0: # label is bigger
+            label = label[:,sz_offset[0]:sz_offset[0]+img.shape[1]]
         else: # data is bigger
-            data=data[:,sz_offset[0]-offset[0]:data.shape[1]-(sz_offset2[0]-offset[0])]
+            img = img[:,sz_offset[0]:sz_offset[0]+img.shape[1]]
         # y axis
-        if offset[1] > sz_offset2[1]:
-            label=label[:,:,(offset[1]-sz_offset[1]):(label.shape[2]-(offset[1]-sz_offset2[1]))]
+        if sz_diff[2] < 0:
+            label=label[:,:,sz_offset[1]:sz_offset[1]+img.shape[2]]
         else:
-            data=data[:,:,sz_offset[1]-offset[1]:data.shape[2]-(sz_offset2[1]-offset[1])]
-        if offset[2] > sz_offset2[2]:
-            label=label[:,:,:,offset[2]-sz_offset[2]:label.shape[3]-(offset[2]-sz_offset2[2])]
+            img = img[:,:,sz_offset[1]:sz_offset[1]+label.shape[2]]
+        if sz_diff[3] < 0:
+            label=label[:,:,:,sz_offset[2]:sz_offset[2]+img.shape[3]]
         else:
-            data=data[:,:,:,sz_offset[2]-offset[2]:data.shape[3]-(sz_offset2[2]-offset[2])]
-    # need return, as label can have new address
-    return data,label
+            img = img[:,:,:,sz_offset[2]:sz_offset[2]+label.shape[3]]
+    if any(offset>0): # pad ground truth by reflection
+        pass
+
+    return img, label
+
+def countVolume(data_sz, vol_sz, stride):
+    return 1 + np.ceil((data_sz - vol_sz) / stride.astype(float32)).astype(int)
+
+def cropVolume(data, sz, st=[0,0,0]): # C*D*W*H
+    return data[:,st[0]:st[0]+sz[0], st[1]:st[1]+sz[1], \
+            st[2]:st[2]+sz[2]]
+
+def cropVolumePad(data, sz, st=np.zeros(3)): # C*D*W*H
+    # within the range
+    dsz = np.array(data.shape[1:])
+    if st.min()>=0 and (st+sz-dsz)<=0: 
+        return data[:,st[0]:st[0]+sz[0], st[1]:st[1]+sz[1], \
+                st[2]:st[2]+sz[2]]
+    else: # out of the range
+        ran = [None]*3
+        for i in range(3):
+            ran[i] = np.abs(np.arange(st[i],st[i]+sz[i])) # reflect negative
+            bid = np.where(ran[i]>=dsz[i])[0]
+            ran[i][bid] = 2*(dsz[i]-1)-ran[i][bid]
+        return data[:,ran[0], ran[1], ran[2]]

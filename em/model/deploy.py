@@ -89,30 +89,34 @@ class unet3D_m1(nn.Module): # deployed Toufiq model
             x = self.upC[i](x)
         return F.sigmoid(self.final(x))
 
+def unet_m2_conv(in_num, out_num, kernel_size, pad_size, stride_size, has_bias, has_BN, has_relu):
+    for i in range(len(in_num)):
+        layers = [nn.Conv3d(in_num[i], out_num[i], kernel_size=kernel_size[i], padding=pad_size[i], stride=stride_size[i], bias=has_bias[i])] 
+        if has_BN:
+            layers.append(nn.BatchNorm3d(out_num[i]))
+        if has_relu==0:
+            layers.append(nn.ReLU(inplace=True))
+        elif has_relu==1:
+            layers.append(nn.ELU(inplace=True))
+    return nn.Sequential(*layers)
+
 class unet_m2_BasicBlock(nn.Module):
     expansion = 1
-    def __init__(self, in_planes, out_planes, has_BN = False):
+    def __init__(self, in_planes, out_planes, is_3D = True, has_BN = False, has_relu = 0):
         super(unet_m2_BasicBlock, self).__init__()
-        if has_BN:
-            self.block1 = nn.Sequential(
-                nn.Conv3d(in_planes, out_planes, kernel_size=(1,3,3), stride=1, padding=(0,1,1), bias=False),
-                nn.BatchNorm3d(out_planes),
-                nn.ReLU(inplace=True))
-            self.block2 = nn.Sequential(
-                nn.Conv3d(out_planes, out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False),
-                nn.BatchNorm3d(out_planes),
-                nn.ReLU(inplace=True),
-                nn.Conv3d(out_planes, out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False),
-                nn.BatchNorm3d(out_planes))
+        self.block1 = unet_m2_conv([in_planes], [out_planes], [(1,3,3)], [(0,1,1)], \
+                                   [1], [False], [has_BN], [has_relu])
+        # no relu for the second block
+        if is_3D:
+            self.block2 = unet_m2_conv([out_planes]*2, [out_planes]*2, [(3,3,3)]*2, [(1,1,1)]*2, \
+                                       [1]*2, [False]*2, [has_BN]*2, [has_relu,-1])
+        else: # a bit different due to bn-2D vs. bn-3D
+            self.block2 = unet_m2_conv([out_planes]*2, [out_planes]*2, [(1,3,3)]*2, [(0,1,1)]*2, \
+                                       [1]*2, [False]*2, [has_BN]*2, [has_relu,-1])
+        if has_relu==0:
+            self.block3 = nn.ReLU(inplace=True)
         else:
-            self.block1 = nn.Sequential(
-                nn.Conv3d(in_planes, out_planes, kernel_size=(1,3,3), stride=1, padding=(0,1,1), bias=False),
-                nn.ReLU(inplace=True))
-            self.block2 = nn.Sequential(
-                nn.Conv3d(out_planes, out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False),
-                nn.ReLU(inplace=True),
-                nn.Conv3d(out_planes, out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False))
-        self.block3 = nn.ReLU(inplace=True)
+            self.block3 = nn.ELU(inplace=True)
 
     def forward(self, x):
         residual = self.block1(x)
@@ -123,24 +127,21 @@ class unet_m2_BasicBlock(nn.Module):
 class unet3D_m2(nn.Module): # deployed PNI model
     # Superhuman Accuracy on the SNEMI3D Connectomics Challenge. Lee et al.
     # https://arxiv.org/abs/1706.00120
-    def __init__(self, in_num=1, out_num=3, filters=[28,36,48,64,80], has_BN=True):
+    def __init__(self, in_num=1, out_num=3, filters=[28,36,48,64,80], has_BN=True, has_relu=0):
         super(unet3D_m2, self).__init__()
         self.filters = filters 
         self.io_num = [in_num, out_num]
         self.res_num = len(filters)-2
         self.seq_num = (self.res_num+1)*2+1
-
+        
         self.downC = nn.ModuleList(
-                [nn.Sequential(
-                    nn.Conv3d(in_num, filters[0], kernel_size=(1,5,5), stride=1, padding=(0,2,2), bias=False),
-                    nn.BatchNorm3d(filters[0]),
-                    nn.ReLU(True))]
-                + [unet_m2_BasicBlock(filters[x], filters[x+1], has_BN)
+                [unet_m2_conv([in_num], [filters[0]], [(1,5,5)], [(0,2,2)], [1], [False], [has_BN], [has_relu])]
+                + [unet_m2_BasicBlock(filters[x], filters[x+1], has_BN, has_relu)
                       for x in range(self.res_num)]) 
         self.downS = nn.ModuleList(
                 [nn.MaxPool3d((1,2,2), (1,2,2))
             for x in range(self.res_num+1)]) 
-        self.center = unet_m2_BasicBlock(filters[-2], filters[-1], has_BN)
+        self.center = unet_m2_BasicBlock(filters[-2], filters[-1], has_BN, has_relu)
         self.upS = nn.ModuleList(
             [nn.Sequential(
                 nn.ConvTranspose3d(filters[self.res_num+1-x], filters[self.res_num+1-x], (1,2,2), (1,2,2), groups=filters[self.res_num+1-x], bias=False),
@@ -151,7 +152,7 @@ class unet3D_m2(nn.Module): # deployed PNI model
             self.upS[x]._modules['0'].weight.data.fill_(1.0)
 
         self.upC = nn.ModuleList(
-            [unet_m2_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], has_BN)
+            [unet_m2_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], has_BN, has_relu)
                 for x in range(self.res_num)]
             + [nn.Conv3d(filters[0], out_num, kernel_size=(1,5,5), stride=1, padding=(0,2,2), bias=True)]) 
 
@@ -166,30 +167,51 @@ class unet3D_m2(nn.Module): # deployed PNI model
             x = self.upC[i](x)
         return F.sigmoid(x)
 
-    def getLearnableSeq(self, seq_id): # learnable variable 
-        if seq_id < self.res_num+1:
-            return self.downC[seq_id]
-        elif seq_id == self.res_num+1:
-            return self.center
-        elif seq_id != self.seq_num-1:
-            seq_id = seq_id-self.res_num
-            if seq_id % 2 ==0:
-                return self.upS[seq_id/2]
-            else:
-                return self.upC[seq_id/2]
-        else:
-            return self.final
+class unet3D_m2_v2(nn.Module):
+    # changes from unet3D_m2
+    # - add 2D residual module
+    # - add 2D residual module
+    def __init__(self, in_num=1, out_num=3, filters=[28,36,48,64,80], has_BN=True, has_relu=0):
+        super(unet3D_m2_v2, self).__init__()
+        self.filters = filters 
+        self.io_num = [in_num, out_num]
+        self.res_num = len(filters)-2
+        self.seq_num = (self.res_num+1)*2+1
 
-    def setLearnableSeq(self, seq_id, seq): # learnable variable 
-        if seq_id < self.res_num+1:
-            self.downC[seq_id] = seq
-        elif seq_id==self.res_num+1:
-            self.center = seq
-        elif seq_id!=self.seq_num-1:
-            seq_id = seq_id-self.res_num
-            if seq_id % 2 ==0:
-                self.upS[seq_id/2] = seq
-            else:
-                self.upC[seq_id/2] = seq
-        else:
-            self.final = seq
+        self.downC = nn.ModuleList(
+                [unet_m2_conv([in_num], [1], [(1,5,5)], [(0,2,2)], [1], [False], [has_BN], [has_relu])]
+                + [unet_m2_BasicBlock(1, filters[0], False, has_BN, has_relu)]
+                + [unet_m2_BasicBlock(filters[x], filters[x+1], True, has_BN, has_relu)
+                      for x in range(1, self.res_num)]) 
+        self.downS = nn.ModuleList(
+                [nn.MaxPool3d((1,2,2), (1,2,2))
+            for x in range(self.res_num+1)]) 
+        self.center = unet_m2_BasicBlock(filters[-2], filters[-1], True, has_BN, has_relu)
+        self.upS = nn.ModuleList(
+            [nn.Sequential(
+                nn.ConvTranspose3d(filters[self.res_num+1-x], filters[self.res_num+1-x], (1,2,2), (1,2,2), groups=filters[self.res_num+1-x], bias=False),
+                nn.Conv3d(filters[self.res_num+1-x], filters[self.res_num-x], kernel_size=(1,1,1), stride=1, bias=True))
+                for x in range(self.res_num+1)]) 
+        # initialize upsample
+        for x in range(self.res_num+1):
+            self.upS[x]._modules['0'].weight.data.fill_(1.0)
+
+        self.upC = nn.ModuleList( # same number of channels from the left
+            [unet_m2_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], True, has_BN, has_relu)
+                for x in range(self.res_num-1)]
+            + [unet_m2_BasicBlock(filters[0], filters[0], False, has_BN, has_relu)]
+            + [nn.Conv3d(filters[0], out_num, kernel_size=(1,5,5), stride=1, padding=(0,2,2), bias=True)]) 
+
+    def forward(self, x):
+        down_u = [None]*(self.res_num+1)
+        x = self.downC[0](x) # first 1x5x5
+        for i in range(self.res_num+1):
+            down_u[i] = self.downC[1+i](x)
+            x = self.downS[i](down_u[i])
+        x = self.center(x)
+        for i in range(self.res_num+1):
+            x = down_u[self.res_num-i] + self.upS[i](x)
+            x = self.upC[i](x)
+        x = self.upC[-1](x) # last 1x5x5
+        return F.sigmoid(x)
+
