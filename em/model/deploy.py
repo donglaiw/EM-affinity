@@ -216,3 +216,85 @@ class unet3D_m2_v2(nn.Module):
         x = self.upC[-1](x) # last 1x5x5
         return F.sigmoid(x)
 
+    
+class unet3D_m3(nn.Module):
+    # 3d unet model for isotropic dataset
+    def __init__(self, in_num=1, out_num=3, filters=[28,36,48,64,80], has_BN=True):
+        super(unet3D_m3, self).__init__()
+        self.filters = filters 
+        self.io_num = [in_num, out_num]
+        self.res_num = len(filters)-2 #3
+        self.seq_num = (self.res_num+1)*2+1
+
+        self.downC = nn.ModuleList(
+                  [unet_m3_BasicBlock(1, filters[0], has_BN)]
+                + [unet_m3_BasicBlock(filters[x], filters[x+1], has_BN)
+                      for x in range(self.res_num)]) 
+        self.downS = nn.ModuleList(
+                [nn.MaxPool3d((2,2,2), (2,2,2))
+            for x in range(self.res_num+1)]) 
+        self.center = unet_m3_BasicBlock(filters[-2], filters[-1], has_BN)
+        self.upS = nn.ModuleList(
+            [nn.Sequential(
+                nn.ConvTranspose3d(filters[self.res_num+1-x], filters[self.res_num+1-x], 2, stride=2, padding=0, groups=filters[self.res_num+1-x], bias=False),
+                nn.Conv3d(filters[self.res_num+1-x], filters[self.res_num-x], kernel_size=(3,3,3), stride=1, padding=1, bias=True))
+                for x in range(self.res_num+1)]) 
+        # initialize upsample
+        for x in range(self.res_num+1):
+            self.upS[x]._modules['0'].weight.data.fill_(1.0)
+
+        self.upC = nn.ModuleList(
+            [unet_m3_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], has_BN)
+                for x in range(self.res_num)]        
+            + [nn.Sequential(
+                  unet_m3_BasicBlock(filters[0], filters[0], has_BN),
+                  nn.Conv3d(filters[0], out_num, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=True))])
+
+    def forward(self, x):
+        down_u = [None]*(self.res_num+1)
+        for i in range(self.res_num+1):
+            down_u[i] = self.downC[i](x)
+            #print("downC:",i,down_u[i].size())
+            x = self.downS[i](down_u[i])
+            #print("downS:",i,x.size())
+        x = self.center(x)
+        for i in range(self.res_num+1):
+            #print("upS:",i,self.upS[i](x).size())
+            #print("downU:",self.res_num-i,down_u[self.res_num-i].size())
+            x = down_u[self.res_num-i] + self.upS[i](x)
+            x = self.upC[i](x)
+            #print("upC:",i, x.size())
+        return F.sigmoid(x)        
+
+
+class unet_m3_BasicBlock(nn.Module):
+    # Basic module for isotropic dataset
+    expansion = 1
+    def __init__(self, in_planes, out_planes, has_BN = False):
+        super(unet_m3_BasicBlock, self).__init__()
+        if has_BN:
+            self.block1 = nn.Sequential(
+                nn.Conv3d(in_planes,  out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False),
+                nn.BatchNorm3d(out_planes),
+                nn.ReLU(inplace=True))
+            self.block2 = nn.Sequential(
+                nn.Conv3d(out_planes, out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False),
+                nn.BatchNorm3d(out_planes),
+                nn.ReLU(inplace=True),
+                nn.Conv3d(out_planes, out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False),
+                nn.BatchNorm3d(out_planes))
+        else:
+            self.block1 = nn.Sequential(
+                nn.Conv3d(in_planes,  out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False),
+                nn.ReLU(inplace=True))
+            self.block2 = nn.Sequential(
+                nn.Conv3d(out_planes, out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False),
+                nn.ReLU(inplace=True),
+                nn.Conv3d(out_planes, out_planes, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bias=False))
+        self.block3 = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        residual  = self.block1(x)
+        out = residual + self.block2(residual)
+        out = self.block3(out)
+        return out                    
