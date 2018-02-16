@@ -177,6 +177,8 @@ def get_model(args, model_io_size):
         model = unet3D_m2(filters=num_filter, has_BN = args.has_BN==1)
     elif args.model_id==2.1: # _m2_v2
         model = unet3D_m2_v2(filters=num_filter, has_BN = args.has_BN==1)
+    elif args.model_id==3: # _m3_iso
+        model = unet3D_m3(filters=num_filter, has_BN = args.has_BN==1)    
 
 
     # 2. load previous model weight
