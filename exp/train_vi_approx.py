@@ -6,8 +6,7 @@ import torch.nn as nn
 import torch.utils.data
 
 import os, sys; sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from em.model.io import load_checkpoint,save_checkpoint
-from em.model.unet import unet3D
+from em.model.io import load_checkpoint, save_checkpoint
 from em.model.deploy import cnn_vi_v1
 from em.model.optim import decay_lr
 from em.model.loss import viWeight
@@ -124,6 +123,7 @@ def get_img(args, model_io_size, opt='train'):
         num_worker = 1
         img_name = args.img_name_val.split('@')
         seg_name = args.seg_name_val.split('@')
+        
     img_dataset_name = args.img_dataset_name.split('@')
     seg_dataset_name = args.seg_dataset_name.split('@')
 
@@ -154,7 +154,7 @@ def get_img(args, model_io_size, opt='train'):
 
     # if malis, then need seg
     do_seg = args.loss_opt==1 # need seg if do malis loss
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     dataset = VolumeDatasetTrain(train_img, train_label, do_seg, np.inf, \
                                  model_io_size[0], model_io_size[1], data_aug=data_aug)
     # to have evaluation during training (two dataloader), has to set num_worker=0
