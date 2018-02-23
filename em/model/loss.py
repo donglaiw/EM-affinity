@@ -79,3 +79,7 @@ class viWeight():
 
 
     def getWeight(self, x_cpu, aff_cpu, seg_cpu):
+
+class viLoss():
+    def __init__(self, conn_dims, opt_weight=0.5, opt_nb=1, clip_low=0.01, clip_high=0.99, thres=0.5):
+    def getWeight(self, x_cpu, aff_cpu, seg_cpu):
