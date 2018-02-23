@@ -104,10 +104,15 @@ def init(args):
     sn = args.output+'/'
     if not os.path.isdir(sn):
         os.makedirs(sn)
+    # I/O size in (z,y,x), no specified channel number
     model_io_size = np.array([[int(x) for x in args.model_input.split(',')],
                               [int(x) for x in args.model_output.split(',')]])
 
     # pre-allocate torch cuda tensor for malis loss
+    '''
+    In the training of CNN2 in VI-approx model, the number of input channel
+    is 6, which is the concatenation of two affinity graph.
+    '''
     train_vars = getVar(args.batch_size, model_io_size, [True, True, not (args.loss_opt == 0 and args.loss_weight_opt == 0)])
     return model_io_size, train_vars
 
@@ -127,6 +132,7 @@ def get_img(args, model_io_size, opt='train'):
     img_dataset_name = args.img_dataset_name.split('@')
     seg_dataset_name = args.seg_dataset_name.split('@')
 
+    # may use datasets from multiple folders
     # should be either one or the same as dir_name
     seg_name = [dir_name[x]+seg_name[0] for x in range(len(dir_name))] \
             if len(seg_name) == 1 else [dir_name[x]+seg_name[x] for x in range(len(dir_name))]
@@ -144,7 +150,7 @@ def get_img(args, model_io_size, opt='train'):
     suf_aff = '_aff'+args.opt_param
     train_img = getImg(img_name, img_dataset_name)
     train_label = getLabel(seg_name, seg_dataset_name, suf_aff)
-    #train_img, train_label = cropCentralN(train_img, train_label)
+    train_img, train_label = cropCentralN(train_img, train_label)
 
     # 2. get dataAug
     aug_opt = [int(x) for x in args.aug_opt.split('@')]
