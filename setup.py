@@ -13,6 +13,14 @@ def setup_cython():
     ext_modules += [Extension('em.lib.elektronn._warping',
                              sources=['em/lib/elektronn/_warping.pyx'],
                              extra_compile_args=['-std=c99', '-fno-strict-aliasing', '-O3', '-Wall', '-Wextra'])]
+
+    # calculate vi
+    ext_modules += [Extension(name='comparestacks',
+        		     include_dirs=[np.get_include()],
+                             sources=['comparestacks.pyx', 'cpp-comparestacks.cpp'],
+                             extra_compile_args=['-O4', '-std=c++0x'],
+                             language='c++')]
+	
     setup(name='em_python',
        version='1.0',
        cmdclass = {'build_ext': build_ext}, 
