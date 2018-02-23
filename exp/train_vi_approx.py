@@ -13,8 +13,7 @@ from em.model.optim import decay_lr
 from em.model.loss import viWeight
 from em.data.volumeData import VolumeDatasetTrain, VolumeDatasetTest, np_collate
 from em.data.io import getVar, getImg, getLabel, cropCentralN
-from em.data.augmentation import DataAugment
-#from em.util.vis_img import visSliceSeg
+from em.data.augmentation import DataAugment 
 
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
@@ -145,7 +144,7 @@ def get_img(args, model_io_size, opt='train'):
     suf_aff = '_aff'+args.opt_param
     train_img = getImg(img_name, img_dataset_name)
     train_label = getLabel(seg_name, seg_dataset_name, suf_aff)
-    train_img, train_label = cropCentralN(train_img, train_label)
+    #train_img, train_label = cropCentralN(train_img, train_label)
 
     # 2. get dataAug
     aug_opt = [int(x) for x in args.aug_opt.split('@')]
