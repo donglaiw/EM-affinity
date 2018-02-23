@@ -15,9 +15,8 @@ def setup_cython():
                              extra_compile_args=['-std=c99', '-fno-strict-aliasing', '-O3', '-Wall', '-Wextra'])]
 
     # calculate vi
-    ext_modules += [Extension(name='comparestacks',
-        		     include_dirs=[np.get_include()],
-                             sources=['comparestacks.pyx', 'cpp-comparestacks.cpp'],
+    ext_modules += [Extension(name='em.evaluation.comparestacks',
+                             sources=['em/evaluation/comparestacks.pyx', 'em/evaluation/cpp-comparestacks.cpp'],
                              extra_compile_args=['-O4', '-std=c++0x'],
                              language='c++')]
 	
@@ -26,11 +25,13 @@ def setup_cython():
        cmdclass = {'build_ext': build_ext}, 
        include_dirs=[numpy.get_include(),''], 
        packages=['em',
+		 'em.evaluation',
                  'em.lib','em.data', 'em.model',
                  'em.prune','em.quant','em.util',
                  'em.lib.malis', 'em.lib.elektronn',
                  'em.lib/align_affine'],
        ext_modules = ext_modules)
+
 if __name__=='__main__':
     # export CPATH=$CONDA_PREFIX/include:$CONDA_PREFIX/include/python2.7/ 
     # pip install --editable .
