@@ -7,7 +7,7 @@ import torch.utils.data
 
 import os, sys; sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from em.model.io import load_checkpoint, save_checkpoint
-from em.model.deploy import cnn_vi_v1
+from em.model.deploy import cnn2_v1
 from em.model.optim import decay_lr
 from em.model.loss import viWeight
 from em.data.volumeData import VolumeDatasetTrain, VolumeDatasetTest, np_collate
@@ -148,23 +148,29 @@ def get_img(args, model_io_size, opt='train'):
     # make sure img and label have the same size
     # assume img and label have the same center
     suf_aff = '_aff'+args.opt_param
-    train_img = getImg(img_name, img_dataset_name)
+    # train_img = getImg(img_name, img_dataset_name)
+    '''
+    In the training of CNN2 in VI-approx model, the inputs are two
+    affinity graphs, thus use another getLabel function to get the
+    predicted affinity grapy.
+    '''
+    train_input = getLabel(img_name, img_dataset_name, suf_aff)
     train_label = getLabel(seg_name, seg_dataset_name, suf_aff)
-    train_img, train_label = cropCentralN(train_img, train_label)
+    #train_img, train_label = cropCentralN(train_img, train_label) # no crop here
 
     # 2. get dataAug
     # no data augmentation for the first VI-approx model
-    '''
-    aug_opt = [int(x) for x in args.aug_opt.split('@')]
-    aug_param_warp = [float(x) for x in args.aug_param_warp.split('@')]
-    aug_param_color = [[float(y) for y in x.split(',')] for x in args.aug_param_color.split('@')]
-    data_aug = DataAugment(aug_opt, aug_param_warp, aug_param_color)
-    '''
+    
+    #aug_opt = [int(x) for x in args.aug_opt.split('@')]
+    #aug_param_warp = [float(x) for x in args.aug_param_warp.split('@')]
+    #aug_param_color = [[float(y) for y in x.split(',')] for x in args.aug_param_color.split('@')]
+    #data_aug = DataAugment(aug_opt, aug_param_warp, aug_param_color)
+    
     # if malis/VI-approx, then need seg
     do_seg = args.loss_opt==1 # need seg if do malis loss
     # import pdb; pdb.set_trace()
     dataset = VolumeDatasetTrain(train_img, train_label, do_seg, np.inf, \
-                                 model_io_size[0], model_io_size[1], data_aug=data_aug)
+                                 model_io_size[0], model_io_size[1], data_aug=None) # no data augmentation
     # to have evaluation during training (two dataloader), has to set num_worker=0
     img_loader =  torch.utils.data.DataLoader(
             dataset, batch_size=args.batch_size, shuffle=True, collate_fn = np_collate,
@@ -180,8 +186,8 @@ def get_model(args, model_io_size):
         model = unet3D(filters=num_filter, opt_arch = opt_arch, opt_param = opt_param,
                        has_BN = args.has_BN==1, has_dropout = args.has_dropout, relu_slope = args.relu_slope,
                        pad_size = args.pad_size, pad_type= args.pad_type)
-    elif args.model_id==1: # cnn_vi_v1
-        model = cnn_vi_v1(filters=num_filter, has_BN = args.has_BN==1)  
+    elif args.model_id==1: # cnn2_v1
+        model = cnn2_v1(has_BN = args.has_BN==1)  
 
     # 2. load previous model weight
     pre_epoch = args.pre_epoch
@@ -194,7 +200,7 @@ def get_model(args, model_io_size):
 
     # 3. get loss weight
     conn_dims = [args.batch_size,3]+list(model_io_size[1])
-    if args.loss_opt == 0: # VI training
+    if args.loss_opt == 1: # VI training in this script
         loss_w = viWeight(conn_dims, args.loss_weight_opt)
 
     return model, loss_w, pre_epoch
