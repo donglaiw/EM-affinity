@@ -111,7 +111,7 @@ def init(args):
     # pre-allocate torch cuda tensor for malis loss
     '''
     In the training of CNN2 in VI-approx model, the number of input channel
-    is 6, which is the concatenation of two affinity graph.
+    is 6, which is the concatenation of two affinity graph. 
     '''
     train_vars = getVar(args.batch_size, model_io_size, [True, True, not (args.loss_opt == 0 and args.loss_weight_opt == 0)])
     return model_io_size, train_vars
@@ -153,12 +153,14 @@ def get_img(args, model_io_size, opt='train'):
     train_img, train_label = cropCentralN(train_img, train_label)
 
     # 2. get dataAug
+    # no data augmentation for the first VI-approx model
+    '''
     aug_opt = [int(x) for x in args.aug_opt.split('@')]
     aug_param_warp = [float(x) for x in args.aug_param_warp.split('@')]
     aug_param_color = [[float(y) for y in x.split(',')] for x in args.aug_param_color.split('@')]
     data_aug = DataAugment(aug_opt, aug_param_warp, aug_param_color)
-
-    # if malis, then need seg
+    '''
+    # if malis/VI-approx, then need seg
     do_seg = args.loss_opt==1 # need seg if do malis loss
     # import pdb; pdb.set_trace()
     dataset = VolumeDatasetTrain(train_img, train_label, do_seg, np.inf, \
