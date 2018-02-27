@@ -169,7 +169,7 @@ def get_img(args, model_io_size, opt='train'):
     # if malis/VI-approx, then need seg
     do_seg = args.loss_opt==1 # need seg if do malis loss
     # import pdb; pdb.set_trace()
-    dataset = VolumeDatasetTrain(train_img, train_label, do_seg, np.inf, \
+    dataset = VolumeDatasetTrain(train_input, train_label, do_seg, np.inf, \
                                  model_io_size[0], model_io_size[1], data_aug=None) # no data augmentation
     # to have evaluation during training (two dataloader), has to set num_worker=0
     img_loader =  torch.utils.data.DataLoader(
@@ -187,7 +187,7 @@ def get_model(args, model_io_size):
                        has_BN = args.has_BN==1, has_dropout = args.has_dropout, relu_slope = args.relu_slope,
                        pad_size = args.pad_size, pad_type= args.pad_type)
     elif args.model_id==1: # cnn2_v1
-        model = cnn2_v1(has_BN = args.has_BN==1)  
+        model = cnn2_v1()  
 
     # 2. load previous model weight
     pre_epoch = args.pre_epoch
