@@ -353,8 +353,8 @@ class Bottleneck(nn.Module):
         self.conv2 = nn.Conv3d(planes, planes, kernel_size=3, stride=stride,
                                padding=1, bias=False)
         self.bn2 = nn.BatchNorm3d(planes)
-        self.conv3 = nn.Conv3d(planes, planes * expansion, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm3d(planes * expansion)
+        self.conv3 = nn.Conv3d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm3d(planes * 4)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
@@ -391,11 +391,11 @@ class ResNet(nn.Module):
                                bias=False)
         self.bn1 = nn.BatchNorm3d(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool3d((2,2,2), (2,2,2)
-        self.layer1 = self._make_layer(block, self.inplanes*2, layers[0], stride=1)
-        self.layer2 = self._make_layer(block, self.inplanes*4, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, self.inplanes*8, layers[2], stride=2)
-        self.avgpool = nn.AvgPool3d(7, stride=1)
+        self.maxpool = nn.MaxPool3d((2,2,2), (2,2,2))
+        self.layer1 = self._make_layer(block, 32, layers[0], stride=1)
+        self.layer2 = self._make_layer(block, 64, layers[1], stride=2)
+        self.layer3 = self._make_layer(block, 128,layers[2], stride=2)
+        self.avgpool = nn.AvgPool3d(8, stride=1)
         self.fc = nn.Linear(self.inplanes*8 * block.expansion, num_classes)
         self.relu = nn.ReLU(inplace=True)                            
 
@@ -444,5 +444,5 @@ class ResNet(nn.Module):
                                     
 def cnn2_v1():
     # Constructs a ResNet model to approximate VI.
-    model = ResNet(BasicBlock, [3, 6, 3], **kwargs)
+    model = ResNet(BasicBlock, [3, 6, 3])
     return model
