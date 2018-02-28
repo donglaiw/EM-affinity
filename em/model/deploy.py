@@ -396,7 +396,7 @@ class ResNet(nn.Module):
         self.layer2 = self._make_layer(block, 64, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 128,layers[2], stride=2)
         self.avgpool = nn.AvgPool3d(8, stride=1)
-        self.fc = nn.Linear(self.inplanes*8 * block.expansion, num_classes)
+        self.fc = nn.Linear(128, num_classes)
         self.relu = nn.ReLU(inplace=True)                            
 
         for m in self.modules():
