@@ -3,8 +3,8 @@ cimport numpy as np
 import numpy as np
 import ctypes
 
-from ibex.transforms import distance, seg2seg
-from cremi_python.cremi.evaluation.voi import voi
+from em.transforms import distance, seg2seg
+#from cremi_python.cremi.evaluation.voi import voi
 
 
 cdef extern from 'cpp-comparestacks.h':
@@ -31,8 +31,8 @@ def PrincetonEvaluate(segmentation, gold, dilate_ground_truth=1, mask_ground_tru
     zres, yres, xres = segmentation.shape
     CppEvaluate(&(cpp_segmentation[0,0,0]), &(cpp_gold[0,0,0]), [zres, yres, xres], mask_ground_truth)
 
-
-
+# VoI calculation used in CREMI challenge
+'''
 def CremiEvaluate(segmentation, gold, dilate_ground_truth=1, mask_ground_truth=True, filtersize=0):
     # make sure these elements are the same size
     assert (segmentation.shape == gold.shape)
@@ -55,3 +55,4 @@ def CremiEvaluate(segmentation, gold, dilate_ground_truth=1, mask_ground_truth=T
         print 'Variation of Information Full: {}'.format(vi_split + vi_merge)
         print 'Variation of Information Merge: {}'.format(vi_merge)
         print 'Variation of Information Split: {}'.format(vi_split)
+ '''
