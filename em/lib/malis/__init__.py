@@ -1,1 +1,1 @@
-from em.lib.malis.malis_core import *
+from malis_core import *
