@@ -2,6 +2,8 @@ def setup_cython():
     from distutils.core import setup
     from distutils.extension import Extension
     from Cython.Distutils import build_ext
+    from Cython.Build import cythonize
+	
     import numpy
     ext_modules = []
     # malis pyx
@@ -47,7 +49,7 @@ def setup_cython():
                  'em.prune','em.quant','em.util',
                  'em.lib.malis', 'em.lib.elektronn',
                  'em.lib/align_affine'],
-       ext_modules = ext_modules)
+       ext_modules = cythonize(ext_modules))
 
 if __name__=='__main__':
     # export CPATH=$CONDA_PREFIX/include:$CONDA_PREFIX/include/python2.7/ 
