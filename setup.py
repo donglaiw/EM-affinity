@@ -8,7 +8,7 @@ def setup_cython():
     ext_modules = []
     # malis pyx
     ext_modules += [Extension("em.lib.malis.malis_core", 
-                             sources=["em/lib/malis/malis_core.pyx"], 
+                             sources=["em/lib/malis/malis_core.pyx", "em/lib/malis/malis_core_cpp.cpp"], 
                              language='c++',extra_link_args=["-std=c++11"],
                              extra_compile_args=["-std=c++11", "-w"])]
     # warping pyx
