@@ -3,6 +3,7 @@ import numpy as np
 import h5py
 
 from em.lib.malis import malis_core as malisL
+from em.evaluation import comparestacks # calculate VI between segs, used in viWeight and viLoss
 
 # ---------------------
 # 1. utility layers
@@ -71,3 +72,22 @@ def weightedMSE(input, target, weight=None, normalize_weight=False):
         else:
             return torch.mean(weight * (input - target) ** 2)
 
+# ---------------------
+# 3. Training with approximated VI loss
+class viWeight():
+    def __init__(self, conn_dims, opt_weight=0.5, opt_nb=1):
+        # pre-compute 
+        self.opt_weight=opt_weight
+        if opt_nb==1:
+            self.nhood_data = malisL.mknhood3d(1).astype(np.int32).flatten()
+        else:
+            self.nhood_data = malisL.mknhood3d(1,1.8).astype(np.uint64).flatten()
+        (seg,segSizes)=connected_components_affgraph(aff, self.nhood_data)
+        
+    def getWeight(self, x_cpu, aff_cpu, seg_cpu):
+        
+'''
+class viLoss():
+    def __init__(self, conn_dims, opt_weight=0.5, opt_nb=1, clip_low=0.01, clip_high=0.99, thres=0.5):
+    def getWeight(self, x_cpu, aff_cpu, seg_cpu):
+'''

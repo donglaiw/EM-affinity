@@ -6,15 +6,13 @@ import torch.nn as nn
 import torch.utils.data
 
 import os, sys; sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from em.model.io import load_checkpoint,save_checkpoint
-from em.model.unet import unet3D
-from em.model.deploy import unet3D_m1, unet3D_m2, unet3D_m2_v2
+from em.model.io import load_checkpoint, save_checkpoint
+from em.model.deploy import cnn2_v1
 from em.model.optim import decay_lr
-from em.model.loss import weightedMSE,malisWeight,labelWeight
+from em.model.loss import viWeight
 from em.data.volumeData import VolumeDatasetTrain, VolumeDatasetTest, np_collate
 from em.data.io import getVar, getImg, getLabel, cropCentralN
-from em.data.augmentation import DataAugment
-#from em.util.vis_img import visSliceSeg
+from em.data.augmentation import DataAugment 
 
 def get_args():
     parser = argparse.ArgumentParser(description='Training Model')
@@ -106,10 +104,15 @@ def init(args):
     sn = args.output+'/'
     if not os.path.isdir(sn):
         os.makedirs(sn)
+    # I/O size in (z,y,x), no specified channel number
     model_io_size = np.array([[int(x) for x in args.model_input.split(',')],
                               [int(x) for x in args.model_output.split(',')]])
 
     # pre-allocate torch cuda tensor for malis loss
+    '''
+    In the training of CNN2 in VI-approx model, the number of input channel
+    is 6, which is the concatenation of two affinity graph. 
+    '''
     train_vars = getVar(args.batch_size, model_io_size, [True, True, not (args.loss_opt == 0 and args.loss_weight_opt == 0)])
     return model_io_size, train_vars
 
@@ -125,9 +128,11 @@ def get_img(args, model_io_size, opt='train'):
         num_worker = 1
         img_name = args.img_name_val.split('@')
         seg_name = args.seg_name_val.split('@')
+        
     img_dataset_name = args.img_dataset_name.split('@')
     seg_dataset_name = args.seg_dataset_name.split('@')
 
+    # may use datasets from multiple folders
     # should be either one or the same as dir_name
     seg_name = [dir_name[x]+seg_name[0] for x in range(len(dir_name))] \
             if len(seg_name) == 1 else [dir_name[x]+seg_name[x] for x in range(len(dir_name))]
@@ -143,21 +148,29 @@ def get_img(args, model_io_size, opt='train'):
     # make sure img and label have the same size
     # assume img and label have the same center
     suf_aff = '_aff'+args.opt_param
-    train_img = getImg(img_name, img_dataset_name)
+    # train_img = getImg(img_name, img_dataset_name)
+    '''
+    In the training of CNN2 in VI-approx model, the inputs are two
+    affinity graphs, thus use another getLabel function to get the
+    predicted affinity grapy.
+    '''
+    train_input = getLabel(img_name, img_dataset_name, suf_aff)
     train_label = getLabel(seg_name, seg_dataset_name, suf_aff)
-    train_img, train_label = cropCentralN(train_img, train_label)
+    #train_img, train_label = cropCentralN(train_img, train_label) # no crop here
 
     # 2. get dataAug
-    aug_opt = [int(x) for x in args.aug_opt.split('@')]
-    aug_param_warp = [float(x) for x in args.aug_param_warp.split('@')]
-    aug_param_color = [[float(y) for y in x.split(',')] for x in args.aug_param_color.split('@')]
-    data_aug = DataAugment(aug_opt, aug_param_warp, aug_param_color)
-
-    # if malis, then need seg
+    # no data augmentation for the first VI-approx model
+    
+    #aug_opt = [int(x) for x in args.aug_opt.split('@')]
+    #aug_param_warp = [float(x) for x in args.aug_param_warp.split('@')]
+    #aug_param_color = [[float(y) for y in x.split(',')] for x in args.aug_param_color.split('@')]
+    #data_aug = DataAugment(aug_opt, aug_param_warp, aug_param_color)
+    
+    # if malis/VI-approx, then need seg
     do_seg = args.loss_opt==1 # need seg if do malis loss
-    import pdb; pdb.set_trace()
-    dataset = VolumeDatasetTrain(train_img, train_label, do_seg, np.inf, \
-                                 model_io_size[0], model_io_size[1], data_aug=data_aug)
+    # import pdb; pdb.set_trace()
+    dataset = VolumeDatasetTrain(train_input, train_label, do_seg, np.inf, \
+                                 model_io_size[0], model_io_size[1], data_aug=None) # no data augmentation
     # to have evaluation during training (two dataloader), has to set num_worker=0
     img_loader =  torch.utils.data.DataLoader(
             dataset, batch_size=args.batch_size, shuffle=True, collate_fn = np_collate,
@@ -173,13 +186,8 @@ def get_model(args, model_io_size):
         model = unet3D(filters=num_filter, opt_arch = opt_arch, opt_param = opt_param,
                        has_BN = args.has_BN==1, has_dropout = args.has_dropout, relu_slope = args.relu_slope,
                        pad_size = args.pad_size, pad_type= args.pad_type)
-    elif args.model_id==2: # _m2
-        model = unet3D_m2(filters=num_filter, has_BN = args.has_BN==1)
-    elif args.model_id==2.1: # _m2_v2
-        model = unet3D_m2_v2(filters=num_filter, has_BN = args.has_BN==1)
-    elif args.model_id==3: # _m3_iso
-        model = unet3D_m3(filters=num_filter, has_BN = args.has_BN==1)    
-
+    elif args.model_id==1: # cnn2_v1
+        model = cnn2_v1()  
 
     # 2. load previous model weight
     pre_epoch = args.pre_epoch
@@ -192,10 +200,8 @@ def get_model(args, model_io_size):
 
     # 3. get loss weight
     conn_dims = [args.batch_size,3]+list(model_io_size[1])
-    if args.loss_opt == 0: # L2 training
-        loss_w = labelWeight(conn_dims, args.loss_weight_opt)
-    elif args.loss_opt == 1: # malis training
-        loss_w = malisWeight(conn_dims, args.loss_weight_opt)
+    if args.loss_opt == 1: # VI training in this script
+        loss_w = viWeight(conn_dims, args.loss_weight_opt)
 
     return model, loss_w, pre_epoch
 
