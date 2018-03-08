@@ -17,26 +17,30 @@ def setup_cython():
                              extra_compile_args=['-std=c99', '-fno-strict-aliasing', '-O3', '-Wall', '-Wextra'])]
 
     # calculate vi
-    ext_modules += [Extension(name='em.evaluation.comparestacks',
+    ext_modules += cythonize(
+		   [Extension(name='em.evaluation.comparestacks',
                              sources=['em/evaluation/comparestacks.pyx', 'em/evaluation/cpp-comparestacks.cpp'],
                              extra_compile_args=['-O4', '-std=c++0x'],
-                             language='c++')]
+                             language='c++')])
 	
     # utils for vi calculation
-    ext_modules += [Extension(name='em.transforms.distance',
+    ext_modules += cythonize(
+		   [Extension(name='em.transforms.distance',
         	    sources=['em/transforms/distance.pyx', 'em/transforms/cpp-distance.cpp'],
                     extra_compile_args=['-O4', '-std=c++0x'],
-        	    language='c++')]
+        	    language='c++')])
 
-    ext_modules += [Extension(name='em.transforms.seg2gold',
+    ext_modules += cythonize(
+	 	   [Extension(name='em.transforms.seg2gold',
         	    sources=['em/transforms/seg2gold.pyx', 'em/transforms/cpp-seg2gold.cpp'],
                     extra_compile_args=['-O4', '-std=c++0x'],
-                    language='c++')]
+                    language='c++')])
 
-    ext_modules += [Extension(name='em.transforms.seg2seg',
+    ext_modules += cythonize(
+		   [Extension(name='em.transforms.seg2seg',
                     sources=['em/transforms/seg2seg.pyx', 'em/transforms/cpp-seg2seg.cpp'],
                     extra_compile_args=['-O4', '-std=c++0x'],
-                    language='c++')]
+                    language='c++')])
 	
     setup(name='em_python',
        version='1.0',
@@ -49,7 +53,7 @@ def setup_cython():
                  'em.prune','em.quant','em.util',
                  'em.lib.malis', 'em.lib.elektronn',
                  'em.lib/align_affine'],
-       ext_modules = cythonize(ext_modules))
+       ext_modules = ext_modules)
 
 if __name__=='__main__':
     # export CPATH=$CONDA_PREFIX/include:$CONDA_PREFIX/include/python2.7/ 
