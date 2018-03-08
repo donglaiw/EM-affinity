@@ -11,6 +11,7 @@
 #include <iostream>
 #include <fstream>
 
+#include "malis_core_cpp.h"
 using namespace std;
 
 template <class T>
