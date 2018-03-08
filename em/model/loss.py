@@ -85,6 +85,7 @@ class viWeight():
         (seg,segSizes)=connected_components_affgraph(aff, self.nhood_data)
         
     def getWeight(self, x_cpu, aff_cpu, seg_cpu):
+        pass
         
 '''
 class viLoss():
