@@ -54,4 +54,5 @@ def setup_cython():
 if __name__=='__main__':
     # export CPATH=$CONDA_PREFIX/include:$CONDA_PREFIX/include/python2.7/ 
     # pip install --editable .
+    # cp build/lib.linux-x86_64-2.7/em/lib/malis/malis_core.so em/lib/malis/
 	setup_cython()
