@@ -18,7 +18,7 @@ def setup_cython():
 
     # calculate vi
     ext_modules += [Extension(name='em.evaluation.comparestacks',
-                    sources=['em/evaluation/comparestacks.pyx'],
+                    sources=['em/evaluation/comparestacks.pyx', 'em/evaluation/cpp-comparestacks.cpp'],
                     extra_compile_args=['-O4', '-std=c++0x'],
                     language='c++')]
 	
