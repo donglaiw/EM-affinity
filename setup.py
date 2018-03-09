@@ -24,17 +24,17 @@ def setup_cython():
 	
     # utils for vi calculation
     ext_modules += [Extension(name='em.transforms.distance',
-        	    sources=['em/transforms/distance.pyx'],
+        	    sources=['em/transforms/distance.pyx','em/transforms/cpp-distance.cpp'],
                     extra_compile_args=['-O4', '-std=c++0x'],
         	    language='c++')]
 
     ext_modules += [Extension(name='em.transforms.seg2gold',
-        	    sources=['em/transforms/seg2gold.pyx'],
+        	    sources=['em/transforms/seg2gold.pyx','em/transforms/cpp-seg2gold.cpp'],
                     extra_compile_args=['-O4', '-std=c++0x'],
                     language='c++')]
 
     ext_modules += [Extension(name='em.transforms.seg2seg',
-                    sources=['em/transforms/seg2seg.pyx'],
+                    sources=['em/transforms/seg2seg.pyx','em/transforms/cpp-seg2seg.cpp'],
                     extra_compile_args=['-O4', '-std=c++0x'],
                     language='c++')]
 	
