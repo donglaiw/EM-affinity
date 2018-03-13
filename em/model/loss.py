@@ -3,7 +3,7 @@ import numpy as np
 import h5py
 
 from em.lib.malis import malis_core as malisL
-from em.evaluation import comparestacks # calculate VI between segs, used in viWeight and viLoss
+from em.evaluation import comparestacks
 
 # ---------------------
 # 1. utility layers
