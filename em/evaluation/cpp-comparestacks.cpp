@@ -20,7 +20,7 @@ static long NChoose2(long N)
 }
 
 
-
+# return VI value for training
 double CppEvaluate(long *segmentation, long *gold, long resolution[3], bool mask_ground_truth)
 {
     // get convenient variables
@@ -101,9 +101,9 @@ double CppEvaluate(long *segmentation, long *gold, long resolution[3], bool mask
     long FP = TP_FP - TP;
     long FN = TP_FN - TP;
 
-    printf("Rand Error Full: %lf\n", (FP + FN) / (double) (NChoose2(nnonzero)));
-    printf("Rand Error Merge: %lf\n", FP / (double) (NChoose2(nnonzero)));
-    printf("Rand Error Split: %lf\n", FN / (double) (NChoose2(nnonzero)));
+    #printf("Rand Error Full: %lf\n", (FP + FN) / (double) (NChoose2(nnonzero)));
+    #printf("Rand Error Merge: %lf\n", FP / (double) (NChoose2(nnonzero)));
+    #printf("Rand Error Split: %lf\n", FN / (double) (NChoose2(nnonzero)));
 
 
 
@@ -129,9 +129,9 @@ double CppEvaluate(long *segmentation, long *gold, long resolution[3], bool mask
         }
     }
 
-    printf("Variation of Information Full: %lf\n", VI_split + VI_merge);
-    printf("Variation of Information Merge: %lf\n", VI_merge);
-    printf("Variation of Information Split: %lf\n", VI_split);
+    #printf("Variation of Information Full: %lf\n", VI_split + VI_merge);
+    #printf("Variation of Information Merge: %lf\n", VI_merge);
+    #printf("Variation of Information Split: %lf\n", VI_split);
 
     // free memory
     delete[] s;
@@ -142,5 +142,7 @@ double CppEvaluate(long *segmentation, long *gold, long resolution[3], bool mask
 
     // end stopwatch
     t2 = clock();
-    printf("\n running time: %lf\n", ((float)t2 - (float)t1) / CLOCKS_PER_SEC);
+    #printf("\n running time: %lf\n", ((float)t2 - (float)t1) / CLOCKS_PER_SEC);
+    
+    return VI_split, VI_merge;
 }
