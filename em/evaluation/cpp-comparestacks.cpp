@@ -110,6 +110,7 @@ double CppEvaluate(long *segmentation, long *gold, long resolution[3], bool mask
     // calculate the variation of information
     double VI_split = 0.0;
     double VI_merge = 0.0;
+    double VI = 0.0;
 
     for (long is = 0; is < max_segment; ++is) {
         if (!s[is]) continue;
@@ -144,5 +145,6 @@ double CppEvaluate(long *segmentation, long *gold, long resolution[3], bool mask
     t2 = clock();
     //printf("\n running time: %lf\n", ((float)t2 - (float)t1) / CLOCKS_PER_SEC);
     
-    return (VI_split + VI_merge);
+    VI = VI_split + VI_merge;
+    return VI;
 }
