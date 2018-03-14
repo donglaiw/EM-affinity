@@ -144,5 +144,5 @@ double CppEvaluate(long *segmentation, long *gold, long resolution[3], bool mask
     t2 = clock();
     #printf("\n running time: %lf\n", ((float)t2 - (float)t1) / CLOCKS_PER_SEC);
     
-    return VI_split, VI_merge;
+    return (VI_split + VI_merge);
 }
