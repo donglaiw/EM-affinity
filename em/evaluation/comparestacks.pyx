@@ -29,10 +29,10 @@ def PrincetonEvaluate(segmentation, gold, dilate_ground_truth=1, mask_ground_tru
     cpp_gold = np.ascontiguousarray(gold, dtype=ctypes.c_int64)
 
     zres, yres, xres = segmentation.shape
-    VI_split, VI_merge = CppEvaluate(&(cpp_segmentation[0,0,0]), &(cpp_gold[0,0,0]), [zres, yres, xres], mask_ground_truth)
+    VI = CppEvaluate(&(cpp_segmentation[0,0,0]), &(cpp_gold[0,0,0]), [zres, yres, xres], mask_ground_truth)
     
     # return VI value for training
-    return VI_split, VI_merge
+    return VI
     
 
 # VoI calculation used in CREMI challenge
