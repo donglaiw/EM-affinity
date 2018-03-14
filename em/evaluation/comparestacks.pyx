@@ -8,7 +8,7 @@ from em.transforms import distance, seg2seg
 
 
 cdef extern from 'cpp-comparestacks.h':
-    void CppEvaluate(long *segmentation, long *gold, long resolution[3], unsigned char mask_ground_truth)
+    double CppEvaluate(long *segmentation, long *gold, long resolution[3], unsigned char mask_ground_truth)
 
 def PrincetonEvaluate(segmentation, gold, dilate_ground_truth=1, mask_ground_truth=True, filtersize=0):
     # make sure these elements are the same size
