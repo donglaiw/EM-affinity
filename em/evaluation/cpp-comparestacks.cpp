@@ -21,7 +21,7 @@ static long NChoose2(long N)
 
 
 
-void CppEvaluate(long *segmentation, long *gold, long resolution[3], bool mask_ground_truth)
+double CppEvaluate(long *segmentation, long *gold, long resolution[3], bool mask_ground_truth)
 {
     // get convenient variables
     long zres = resolution[IB_Z];
