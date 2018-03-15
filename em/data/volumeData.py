@@ -98,7 +98,7 @@ class VolumeDatasetTrain(VolumeDataset):
     def getPos(self, index, vol_size):
         # index: not used
         pos = [0,0,0,0]
-        did = self.getDataset(np.random.randint(self.sample_num_a))
+        did = self.getPosDataset(np.random.randint(self.sample_num_a))
         pos[0] = did
         tmp_size = countVolume(self.img_size[did], vol_size, self.sample_stride)
         index = np.random.randint(tmp_size)
