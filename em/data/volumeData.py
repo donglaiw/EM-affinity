@@ -3,7 +3,9 @@ import json
 import torch.utils.data
 from em.lib.malis import malis_core as malisL
 from em.data.io import countVolume, cropVolume
+from em.evaluation import comparestacks 
 
+# 1.(1) dataset class for image inputs
 # based on: https://github.com/ELEKTRONN/ELEKTRONN/blob/master/elektronn/training/CNNData.py
 class VolumeDataset(torch.utils.data.Dataset):
     # assume for test, no warping [hassle to warp it back..]
@@ -153,7 +155,8 @@ class VolumeDatasetTestJson(VolumeDataset):
             else:
                 pos[i] = self.img_size[pos[0]][i-1]-self.vol_img_size[i-1]
         return pos
-
+    
+# 1.(2) dataset class for affinity inputs
 
 # -- 2. misc --
 # for dataloader
