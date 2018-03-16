@@ -161,7 +161,7 @@ class AffinityDataset(torch.utils.data.Dataset):
     # assume for test, no warping [hassle to warp it back..]
     def __init__(self,
                  affinity, label,
-                 num_vol = -1, # train: num_vol=num_iter*batch_size, test: compute on a grid 
+                 #num_vol = -1, # train: num_vol=num_iter*batch_size, test: compute on a grid 
                  vol_input_size = (64,64,64),
                  vol_label_size = (64,64,64),
                  sample_stride = (1,1,1),
