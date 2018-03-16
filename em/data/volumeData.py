@@ -165,6 +165,7 @@ class AffinityDataset(torch.utils.data.Dataset):
                  vol_input_size = (64,64,64),
                  vol_label_size = (64,64,64),
                  sample_stride = (1,1,1),
+                 threshold = 0.5
                  data_aug = None):
 
         # data format
@@ -183,7 +184,8 @@ class AffinityDataset(torch.utils.data.Dataset):
         self.sample_stride = np.array(sample_stride, dtype=np.float32)
         self.sample_size = [ countVolume(x, self.vol_input_size, sample_stride) \
                             for x in self.input_size]
-        self.sample_num = np.array([np.prod(x) for x in self.sample_size]) #total number of possible inputs
+        #total number of possible inputs for each volume
+        self.sample_num = np.array([np.prod(x) for x in self.sample_size])
         self.sample_num_a = np.sum(self.sample_num)
         self.sample_num_c = np.cumsum([0]+self.sample_num)
 
@@ -199,7 +201,7 @@ class AffinityDataset(torch.utils.data.Dataset):
             vol_size = self.data_aug.aug_warp[0]
         # train: random sample based on vol_size
         # test: sample based on index
-        pos = self.getPos(index, vol_size) # override getPos in sub-class
+        pos = self.getPos(vol_size)
 
         # 2. get initial volume
         out_input = cropVolume(self.affinity[pos[0]], pos[1:], vol_size)
@@ -208,19 +210,19 @@ class AffinityDataset(torch.utils.data.Dataset):
         VoI = False
         if self.label is not None:
             out_label = cropVolume(self.label[pos[0]], pos[1:], vol_size)
-            seg_input = malisL.connected_components_affgraph((out_input>0.5).astype(np.int32),self.nhood)[0]
-            seg_label = malisL.connected_components_affgraph(out_label.astype(np.int32),self.nhood)[0].astype(np.uint64)
+            seg_input = malisL.connected_components_affgraph((out_input>self.threshold).astype(np.int32),self.nhood)[0]
+            seg_label = malisL.connected_components_affgraph(out_label.astype(np.int32),self.nhood)[0]
             VoI = comparestacks.PrincetonEvaluate(seg_input, seg_label)
 
         # 3. augmentation
         if self.data_aug is not None: # augmentation
             out_input, out_label = self.data_aug.augment(out_input, out_label)
             
-        # print(out_img.shape, out_label.shape, pos)
+        # print(out_input.shape, out_label.shape, VoI, pos)
         return out_input, out_label, VoI, pos
 
     def __len__(self): # number of possible position
-        return self.num_vol 
+        return self.sample_num_a
     
     def getPosDataset(self, index):
         return np.argmax(index<self.sample_num_c)-1 # which dataset
