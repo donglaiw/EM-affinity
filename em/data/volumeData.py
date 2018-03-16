@@ -165,7 +165,7 @@ class AffinityDataset(torch.utils.data.Dataset):
                  vol_input_size = (64,64,64),
                  vol_label_size = (64,64,64),
                  sample_stride = (1,1,1),
-                 threshold = 0.5
+                 threshold = 0.5,
                  data_aug = None):
 
         # data format
