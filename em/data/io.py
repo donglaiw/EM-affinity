@@ -121,7 +121,7 @@ def cropCentral(img, label, offset=np.array([0,0,0])):
     return img, label
 
 def countVolume(data_sz, vol_sz, stride):
-    return 1 + np.ceil((data_sz - vol_sz) / stride.astype(float32)).astype(int)
+    return 1 + np.ceil((data_sz - vol_sz) / stride.astype(float)).astype(int)
 
 def cropVolume(data, sz, st=[0,0,0]): # C*D*W*H
     return data[:,st[0]:st[0]+sz[0], st[1]:st[1]+sz[1], \
