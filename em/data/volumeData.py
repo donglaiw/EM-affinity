@@ -182,7 +182,7 @@ class AffinityDataset(torch.utils.data.Dataset):
 
         # compute number of samples for each dataset (multi-volume input)
         self.sample_stride = np.array(sample_stride, dtype=np.float32)
-        self.sample_size = [ countVolume(self.input_size[x], self.vol_input_size, np.array(sample_stride)) \
+        self.sample_size = [ countVolume(self.input_size[x], self.vol_input_size, np.array(self.sample_stride)) \
                             for x in range(len(self.input_size))]
         #total number of possible inputs for each volume
         self.sample_num = np.array([np.prod(x) for x in self.sample_size])
@@ -231,7 +231,7 @@ class AffinityDataset(torch.utils.data.Dataset):
         pos = [0,0,0,0]
         did = self.getPosDataset(np.random.randint(self.sample_num_a))
         pos[0] = did
-        tmp_size = countVolume(self.input_size[did], vol_size, self.sample_stride)
+        tmp_size = countVolume(self.input_size[did], vol_size, np.array(self.sample_stride))
         pos[1:] = [np.random.randint(tmp_size[x]) for x in range(len(tmp_size))]
         return pos
  
