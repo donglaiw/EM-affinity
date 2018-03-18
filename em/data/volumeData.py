@@ -204,7 +204,7 @@ class AffinityDataset(torch.utils.data.Dataset):
         pos = self.getPos(vol_size)
 
         # 2. get initial volume
-        out_input = cropVolume(self.affinity[pos[0]], pos[1:], vol_size)
+        out_input = cropVolume(self.input[pos[0]], pos[1:], vol_size)
 
         out_label = False
         VoI = False
