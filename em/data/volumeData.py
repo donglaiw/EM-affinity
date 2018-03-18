@@ -171,6 +171,7 @@ class AffinityDataset(torch.utils.data.Dataset):
         # data format
         self.input = affinity
         self.label = label
+        self.threshold = threshold
         self.nhood = malisL.mknhood3d()
         self.data_aug = data_aug # data augmentation
         #self.data_aug.setSize(vol_input_size, vol_label_size)
