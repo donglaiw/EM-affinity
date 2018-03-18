@@ -220,7 +220,8 @@ class AffinityDataset(torch.utils.data.Dataset):
             out_input, out_label = self.data_aug.augment(out_input, out_label)
             
         # print(out_input.shape, out_label.shape, VoI, pos)
-        return out_input, out_label, VoI, pos
+        model_input = np.concatenate((out_input, out_label),axis=0)
+        return model_input, VoI, pos
 
     def __len__(self): # number of possible position
         return self.sample_num_a
