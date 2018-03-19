@@ -1,42 +1,43 @@
 import numpy as np
 import json
 import torch.utils.data
-from em.lib.malis import malis_core as malisL
+from segLib.seg_core import connected_components_affgraph
 from em.data.io import countVolume, cropVolume
+from em.data.augmentor import buildAugmentor
+from em.data.sampler import buildSampler
+from em.data.data_loader import buildLoader
 
 # based on: https://github.com/ELEKTRONN/ELEKTRONN/blob/master/elektronn/training/CNNData.py
 class VolumeDataset(torch.utils.data.Dataset):
     # assume for test, no warping [hassle to warp it back..]
     def __init__(self,
-                 img, label=None, do_seg = False,
-                 num_vol = -1, # train: num_vol=num_iter*batch_size, test: compute on a grid 
-                 vol_img_size = (31,204,204),
-                 vol_label_size = (3,116,116),
-                 sample_stride = (1,1,1),
-                 data_aug = None): 
-        # data format: consistent with caffe
-        self.img = img
-        self.label = label
-        self.nhood = malisL.mknhood3d() if (label is not None and do_seg) else None
+                 opt_data,
+                 opt_sample,
+                 opt_aug=None): 
+        self.data = buildLoader(opt_data) 
+        self.aug = buildSampler(opt_aug) 
+        self.sample = buildAugmentor(self.data, self.aug, opt_sample) 
+
         self.data_aug = data_aug # data augmentation
         self.data_aug.setSize(vol_img_size, vol_label_size)
         
         # samples, channels, depths, rows, cols
-        self.img_size = [np.array(x.shape[1:]) for x in img] # volume size
-        self.vol_img_size = np.array(vol_img_size) # model input size
-        self.vol_label_size = np.array(vol_label_size) # model output size
+        self.img_size = [np.array(x.shape[1:], dtype=int) for x in img] # volume size
+        self.vol_img_size = np.array(vol_img_size, dtype=int) # model input size
+        self.vol_label_size = np.array(vol_label_size, dtype=int) # model output size
 
         # compute number of samples for each dataset
         self.sample_stride = np.array(sample_stride, dtype=np.float32)
-        self.sample_size = [ countVolume(x, self.vol_img_size, sample_stride) \
+        self.sample_size = [ countVolume(x, self.vol_img_size, self.sample_stride) \
                             for x in self.img_size]
-        self.sample_num = np.array([np.prod(x) for x in self.sample_size])
+        self.sample_num = np.array([np.prod(x) for x in self.sample_size], dtype=int)
         self.sample_num_a = np.sum(self.sample_num)
         self.sample_num_c = np.cumsum([0]+self.sample_num)
 
+        self.num_vol = num_vol
         if self.num_vol == -1: # during test: need to compute it 
             self.num_vol = self.sample_num_a
-            self.sample_size_vol = [np.array([np.prod(x[1:3]),x[2]]) for x in self.sample_size]
+            self.sample_size_vol = [np.array([np.prod(x[1:3]),x[2]], dtype=int) for x in self.sample_size]
 
     def __getitem__(self, index):
         # 1. get volume size
@@ -49,20 +50,19 @@ class VolumeDataset(torch.utils.data.Dataset):
         pos = self.getPos(index, vol_size) 
 
         # 2. get initial volume
-        out_img = cropVolume(self.img[pos[0]], pos[1:], vol_size)
-        out_label = False
-        out_seg = False
+        out_img = cropVolume(self.img[pos[0]], vol_size, pos[1:])
+        out_label = None
+        out_seg = None
         if self.label is not None:
-            out_label = cropVolume(self.label[pos[0]], pos[1:], vol_size)
-        
+            out_label = cropVolume(self.label[pos[0]], vol_size, pos[1:])
+
         # 3. augmentation
         if self.data_aug is not None: # augmentation
             out_img, out_label = self.data_aug.augment(out_img, out_label)
 
         # 4. from gt affinity -> gt segmentation
         if self.nhood is not None: # for malis loss, need local segmentation
-            out_seg = malisL.connected_components_affgraph(out_label.astype(np.int32),\
-                                                           self.nhood)[0].astype(np.uint64)
+            out_seg = connected_components_affgraph(out_label.astype(np.int32))[0].astype(np.uint64)
 
         # print(out_img.shape, out_label.shape, pos)
         return out_img, out_label, out_seg, pos
@@ -98,10 +98,11 @@ class VolumeDatasetTrain(VolumeDataset):
     def getPos(self, index, vol_size):
         # index: not used
         pos = [0,0,0,0]
-        did = self.getDataset(np.random.randint(self.sample_num_a))
+        did = np.random.randint(len(self.img_size)) if len(self.img_size)>1 else 0
         pos[0] = did
         tmp_size = countVolume(self.img_size[did], vol_size, self.sample_stride)
-        index = np.random.randint(tmp_size)
+        # print('num_vol',tmp_size)
+        index = np.random.randint(np.prod(tmp_size))
         tmp_size_vol = [np.prod(tmp_size[1:3]),tmp_size[2]]
         pos[1:] = self.getPosLocation(index, tmp_size_vol)
         return pos

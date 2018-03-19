@@ -1,27 +1,32 @@
+from distutils.core import setup
+from distutils.extension import Extension
+from distutils.sysconfig import get_python_inc
+from Cython.Distutils import build_ext
+import numpy as np
+
+def getExt_model():
+    return []
+
+
+def getExt_data():
+    return [Extension('em.data.augmentation.warping',
+                 sources=['em/data/augmentation/warping.pyx'],
+                 extra_compile_args=['-std=c99', '-fno-strict-aliasing', '-O3', '-Wall', '-Wextra'])]
+
 def setup_cython():
-    from distutils.core import setup
-    from distutils.extension import Extension
-    from Cython.Distutils import build_ext
-    import numpy
+
     ext_modules = []
-    # malis pyx
-    ext_modules += [Extension("em.lib.malis.malis_core", 
-                             sources=["em/lib/malis/malis_core.pyx"], 
-                             language='c++',extra_link_args=["-std=c++11"],
-                             extra_compile_args=["-std=c++11", "-w"])]
-    # warping pyx
-    ext_modules += [Extension('em.lib.elektronn._warping',
-                             sources=['em/lib/elektronn/_warping.pyx'],
-                             extra_compile_args=['-std=c99', '-fno-strict-aliasing', '-O3', '-Wall', '-Wextra'])]
-    setup(name='em_python',
+    ext_modules += getExt_model()
+    ext_modules += getExt_data()
+
+    setup(name='em_pytorch',
        version='1.0',
        cmdclass = {'build_ext': build_ext}, 
-       include_dirs=[numpy.get_include(),''], 
+       include_dirs=[np.get_include(), get_python_inc()], 
        packages=['em',
-                 'em.lib','em.data', 'em.model',
-                 'em.prune','em.quant','em.util',
-                 'em.lib.malis', 'em.lib.elektronn',
-                 'em.lib/align_affine'],
+                 'em.optim','em.data', 'em.model',
+                 'em.app','em.util'
+                 ],
        ext_modules = ext_modules)
 if __name__=='__main__':
     # export CPATH=$CONDA_PREFIX/include:$CONDA_PREFIX/include/python2.7/ 

@@ -2,7 +2,8 @@ import sys
 import numpy as np
 import h5py
 
-from em.lib.malis import malis_core as malisL
+from segLib.seg_malis import malis_init, malis_loss_weights_both
+from segLib.seg_util import mknhood3d
 
 # ---------------------
 # 1. utility layers
@@ -11,17 +12,17 @@ class malisWeight():
         # pre-compute 
         self.opt_weight=opt_weight
         if opt_nb==1:
-            self.nhood_data = malisL.mknhood3d(1).astype(np.int32).flatten()
+            self.nhood_data = mknhood3d(1).astype(np.int32).flatten()
         else:
-            self.nhood_data = malisL.mknhood3d(1,1.8).astype(np.uint64).flatten()
+            self.nhood_data = mknhood3d(1,1.8).astype(np.uint64).flatten()
         self.nhood_dims = np.array((3,3),dtype=np.uint64)
         self.conn_dims = np.array(conn_dims[1:]).astype(np.uint64) # dim=4
-        self.pre_ve, self.pre_prodDims, self.pre_nHood = malisL.malis_init(self.conn_dims, self.nhood_data, self.nhood_dims)
+        self.pre_ve, self.pre_prodDims, self.pre_nHood = malis_init(self.conn_dims, self.nhood_data, self.nhood_dims)
         self.weight = np.zeros(conn_dims,dtype=np.float32)#pre-allocate
 
     def getWeight(self, x_cpu, aff_cpu, seg_cpu):
         for i in range(x_cpu.shape[0]):
-            self.weight[i] = malisL.malis_loss_weights_both(seg_cpu[i].flatten(), self.conn_dims, self.nhood_data, self.nhood_dims, self.pre_ve, self.pre_prodDims, self.pre_nHood, x_cpu[i].flatten(), aff_cpu[i].flatten(), self.opt_weight).reshape(self.conn_dims)
+            self.weight[i] = malis_loss_weights_both(seg_cpu[i].flatten(), self.conn_dims, self.nhood_data, self.nhood_dims, self.pre_ve, self.pre_prodDims, self.pre_nHood, x_cpu[i].flatten(), aff_cpu[i].flatten(), self.opt_weight).reshape(self.conn_dims)
         return self.weight[:x_cpu.shape[0]]
 
 

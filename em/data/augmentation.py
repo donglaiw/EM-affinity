@@ -10,7 +10,7 @@ class DataAugment(object):
                  ): 
         # data format: C*D*W*H
         # model indepent parameters
-        self.pad_offset = np.zeros(3)
+        self.pad_offset = np.zeros(3, dtype=int)
         
         # augmentation parameter
         self.do_warp = do_opt[0] 
@@ -30,20 +30,20 @@ class DataAugment(object):
 
     def augment(self, vol_img, vol_label): # same size data
         vol_img = self.augmentImg(vol_img)
-        if vol_label:
+        if vol_label is not None:
             vol_label = self.augmentLabel(vol_label)
         return vol_img, vol_label
 
     def augmentImg(self, data):
         # data already cropped, but reference
         if self.do_warp != 0:
-            data = self.doWarp(data) # already new memory
+            data = self.doWarp(data)
+            data = cropVolume(data, self.vol_img_size, self.pad_offset) # crop bottom right
         else: # direct crop, do copy o/w overwrite the crop from the whole volume
-            # take the bottom-right volume
             data = data.copy()
 
         if self.do_rot != 0:
-            data = self.doRototaion(data) 
+            data = self.doRotation(data) 
         if self.do_color != 0:
             data = self.doColor(data) 
         if self.do_missD != 0:
@@ -52,12 +52,12 @@ class DataAugment(object):
 
     def augmentLabel(self, data):
         if self.do_warp:
-            data = self.doWarp(self.label, pos, is_label=True)
+            data = self.doWarp(data)
         else: # direct crop
             data = data.copy()
 
         if self.do_rot != 0:
-            data = self.doRototaion(data, True) 
+            data = self.doRotation(data, is_label = True) 
         if self.do_color != 0:
             data = self.doColor(data) 
         if self.do_missD != 0:
@@ -68,9 +68,9 @@ class DataAugment(object):
         self.aug_rot = '{0:04b}'.format(self.do_rot)
         self.aug_rot_st = np.ones((3,3), dtype=int) # for affinity label: need a larger data to compute augmented label
         self.aug_warp = []
-        self.aug_warp_size = self.vol_img_size+self.pad_offset # target size
         if self.do_rot != 0: # need to pad 1 for affinity
-            self.pad_offset = np.ones(3) # pad it for all cases (otherwise messy to debug)
+            self.pad_offset = np.ones(3, dtype=int) # pad it for all cases (otherwise messy to debug)
+        self.aug_warp_size = self.vol_img_size+self.pad_offset # target size
         self.aug_color = []
         self.aug_missD = []
     
@@ -79,7 +79,8 @@ class DataAugment(object):
             self.aug_warp = getWarpParams(self.aug_warp_size, self.param_warp[0],\
                                           self.param_warp[1], self.param_warp[2], self.param_warp[3])
         if self.do_rot == -1: # random
-            self.aug_rot = ''.join([str(np.random.random()>0.5) for x in range(4)])
+            self.aug_rot = ''.join([str(int(np.random.random()>0.5)) for x in range(4)])
+            self.aug_rot_st = np.ones((3,3), dtype=int)
             for i in range(3):
                 self.aug_rot_st[i,i] = 0 if self.aug_rot[i]=='1' else 1
         if self.do_color >0 : # random
@@ -87,23 +88,17 @@ class DataAugment(object):
                               for x in range(3)]+self.param_color[3]
         if self.do_missD >0 : # random sample slices to be unif[0,1]
             miss_num = np.random.randint(self.do_missD)
-            self.aug_missD = np.random.permutation(range(self.vol_data_size[0]))[:miss_num]
+            self.aug_missD = np.random.permutation(range(self.vol_img_size[0]))[:miss_num]
+        print "aug-param:",self.aug_rot,self.aug_color,self.aug_missD
+        #print "aug-param:",self.aug_warp,self.aug_rot,self.aug_color,self.aug_missD
  
-    def doWarp(self, data, is_label=False):
-        # no need to copy
-        if is_label: # label: size=vol_label_size+pad_offset
-            # target size: self.aug_warp_size
-            out = _warp3dFastLab(data, self.aug_warp_size, self.aug_warp[0],\
-                              self.aug_warp[1], self.aug_warp[2], self.aug_warp[3], self.aug_warp[4])
-            # affinity at a point p: connection to p-1 in x/y/z
-            # take the original start position, the vol extends 1 in right/down
-            out = cropVolume(out, self.vol_label_size + self.pad_offset, \
-                             self.crop_offset)
-        else: # img: size=vol_img_size
-            out = warp3dFast(data, self.aug_warp_size, self.aug_warp[0],\
-                              self.aug_warp[1], self.aug_warp[2], self.aug_warp[3], self.aug_warp[4])   
-            # take the bottom right crop
-            out = cropVolume(out, self.vol_img_size, self.pad_offset)
+    def doWarp(self, data, is_seg=False):
+        # warp segmentation 
+        # img, label: have the same size
+        print('aa',data.shape,self.aug_warp_size)
+        out = warp3dFast(data, self.aug_warp_size, self.aug_warp[1],\
+                         self.aug_warp[2], self.aug_warp[3], self.aug_warp[4], self.aug_warp[5])
+        print('db 2:',self.aug_warp_size, out.shape, self.pad_offset)
         return out
 
     def doRotation(self, data, is_label=False): # augmentation with rotation/relection
@@ -116,6 +111,7 @@ class DataAugment(object):
             data  = data[:,:,:,::-1]
         # label: need to crop the right region before swap xy
         if is_label:
+            print("do-label:", data.shape, self.vol_label_size)
             data = cropVolume(data, self.vol_label_size, self.aug_rot_st)
         if self.aug_rot[3] == '1':
             data = data.transpose((0,1,3,2))
@@ -125,8 +121,9 @@ class DataAugment(object):
     
     def doMissData(self, data):# only apply to data 
         # uniform 0-1
-        data[:,self.aug_missD] = np.random.rand((len(self.aug_missD), \
-                                self.vol_data_size[1], self.vol_data_size[2]))
+        if len(self.aug_missD)>0:
+            data[:,self.aug_missD] = np.random.rand((len(self.aug_missD), \
+                                    self.vol_img_size[1], self.vol_img_size[2]))
         return data
 
     def doColor(self, data): # only apply to data in [0,1]

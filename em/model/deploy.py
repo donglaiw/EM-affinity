@@ -89,32 +89,32 @@ class unet3D_m1(nn.Module): # deployed Toufiq model
             x = self.upC[i](x)
         return F.sigmoid(self.final(x))
 
-def unet_m2_conv(in_num, out_num, kernel_size, pad_size, stride_size, has_bias, has_BN, has_relu):
+def unet_m2_conv(in_num, out_num, kernel_size, pad_size, stride_size, has_bias, has_BN, relu_opt):
     layers = []
     for i in range(len(in_num)):
         layers.append(nn.Conv3d(in_num[i], out_num[i], kernel_size=kernel_size[i], padding=pad_size[i], stride=stride_size[i], bias=has_bias[i])) 
         if has_BN[i]:
             layers.append(nn.BatchNorm3d(out_num[i]))
-        if has_relu[i]==0:
+        if relu_opt[i]==0:
             layers.append(nn.ReLU(inplace=True))
-        elif has_relu[i]==1:
+        elif relu_opt[i]==1:
             layers.append(nn.ELU(inplace=True))
     return nn.Sequential(*layers)
 
 class unet_m2_BasicBlock(nn.Module):
     expansion = 1
-    def __init__(self, in_planes, out_planes, is_3D = True, has_BN = False, has_relu = 0):
+    def __init__(self, in_planes, out_planes, is_3D = True, has_BN = False, relu_opt = 0):
         super(unet_m2_BasicBlock, self).__init__()
         self.block1 = unet_m2_conv([in_planes], [out_planes], [(1,3,3)], [(0,1,1)], \
-                                   [1], [False], [has_BN], [has_relu])
+                                   [1], [False], [has_BN], [relu_opt])
         # no relu for the second block
         if is_3D:
             self.block2 = unet_m2_conv([out_planes]*2, [out_planes]*2, [(3,3,3)]*2, [(1,1,1)]*2, \
-                                       [1]*2, [False]*2, [has_BN]*2, [has_relu,-1])
+                                       [1]*2, [False]*2, [has_BN]*2, [relu_opt,-1])
         else: # a bit different due to bn-2D vs. bn-3D
             self.block2 = unet_m2_conv([out_planes]*2, [out_planes]*2, [(1,3,3)]*2, [(0,1,1)]*2, \
-                                       [1]*2, [False]*2, [has_BN]*2, [has_relu,-1])
-        if has_relu==0:
+                                       [1]*2, [False]*2, [has_BN]*2, [relu_opt,-1])
+        if relu_opt==0:
             self.block3 = nn.ReLU(inplace=True)
         else:
             self.block3 = nn.ELU(inplace=True)
@@ -128,7 +128,7 @@ class unet_m2_BasicBlock(nn.Module):
 class unet3D_m2(nn.Module): # deployed PNI model
     # Superhuman Accuracy on the SNEMI3D Connectomics Challenge. Lee et al.
     # https://arxiv.org/abs/1706.00120
-    def __init__(self, in_num=1, out_num=3, filters=[28,36,48,64,80], has_BN=True, has_relu=0):
+    def __init__(self, in_num=1, out_num=3, filters=[28,36,48,64,80], has_BN=True, relu_opt=0):
         super(unet3D_m2, self).__init__()
         self.filters = filters 
         self.io_num = [in_num, out_num]
@@ -136,13 +136,13 @@ class unet3D_m2(nn.Module): # deployed PNI model
         self.seq_num = (self.res_num+1)*2+1
         
         self.downC = nn.ModuleList(
-                [unet_m2_conv([in_num], [filters[0]], [(1,5,5)], [(0,2,2)], [1], [False], [has_BN], [has_relu])]
-                + [unet_m2_BasicBlock(filters[x], filters[x+1], True, has_BN, has_relu)
+                [unet_m2_conv([in_num], [filters[0]], [(1,5,5)], [(0,2,2)], [1], [False], [has_BN], [relu_opt])]
+                + [unet_m2_BasicBlock(filters[x], filters[x+1], True, has_BN, relu_opt)
                       for x in range(self.res_num)]) 
         self.downS = nn.ModuleList(
                 [nn.MaxPool3d((1,2,2), (1,2,2))
             for x in range(self.res_num+1)]) 
-        self.center = unet_m2_BasicBlock(filters[-2], filters[-1], True, has_BN, has_relu)
+        self.center = unet_m2_BasicBlock(filters[-2], filters[-1], True, has_BN, relu_opt)
         self.upS = nn.ModuleList(
             [nn.Sequential(
                 nn.ConvTranspose3d(filters[self.res_num+1-x], filters[self.res_num+1-x], (1,2,2), (1,2,2), groups=filters[self.res_num+1-x], bias=False),
@@ -153,7 +153,7 @@ class unet3D_m2(nn.Module): # deployed PNI model
             self.upS[x]._modules['0'].weight.data.fill_(1.0)
 
         self.upC = nn.ModuleList(
-            [unet_m2_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], True, has_BN, has_relu)
+            [unet_m2_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], True, has_BN, relu_opt)
                 for x in range(self.res_num)]
             + [nn.Conv3d(filters[0], out_num, kernel_size=(1,5,5), stride=1, padding=(0,2,2), bias=True)]) 
 
@@ -172,7 +172,7 @@ class unet3D_m2_v2(nn.Module):
     # changes from unet3D_m2
     # - add 2D residual module
     # - add 2D residual module
-    def __init__(self, in_num=1, out_num=3, filters=[28,36,48,64,80], has_BN=True, has_relu=0):
+    def __init__(self, in_num=1, out_num=3, filters=[28,36,48,64,80], has_BN=True, relu_opt=0):
         super(unet3D_m2_v2, self).__init__()
         self.filters = filters 
         self.io_num = [in_num, out_num]
@@ -180,14 +180,14 @@ class unet3D_m2_v2(nn.Module):
         self.seq_num = (self.res_num+1)*2+1
 
         self.downC = nn.ModuleList(
-                [unet_m2_conv([in_num], [1], [(1,5,5)], [(0,2,2)], [1], [False], [has_BN], [has_relu])]
-                + [unet_m2_BasicBlock(1, filters[0], False, has_BN, has_relu)]
-                + [unet_m2_BasicBlock(filters[x], filters[x+1], True, has_BN, has_relu)
+                [unet_m2_conv([in_num], [1], [(1,5,5)], [(0,2,2)], [1], [False], [has_BN], [relu_opt])]
+                + [unet_m2_BasicBlock(1, filters[0], False, has_BN, relu_opt)]
+                + [unet_m2_BasicBlock(filters[x], filters[x+1], True, has_BN, relu_opt)
                       for x in range(1, self.res_num)]) 
         self.downS = nn.ModuleList(
                 [nn.MaxPool3d((1,2,2), (1,2,2))
             for x in range(self.res_num+1)]) 
-        self.center = unet_m2_BasicBlock(filters[-2], filters[-1], True, has_BN, has_relu)
+        self.center = unet_m2_BasicBlock(filters[-2], filters[-1], True, has_BN, relu_opt)
         self.upS = nn.ModuleList(
             [nn.Sequential(
                 nn.ConvTranspose3d(filters[self.res_num+1-x], filters[self.res_num+1-x], (1,2,2), (1,2,2), groups=filters[self.res_num+1-x], bias=False),
@@ -198,9 +198,9 @@ class unet3D_m2_v2(nn.Module):
             self.upS[x]._modules['0'].weight.data.fill_(1.0)
 
         self.upC = nn.ModuleList( # same number of channels from the left
-            [unet_m2_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], True, has_BN, has_relu)
+            [unet_m2_BasicBlock(filters[self.res_num-x], filters[self.res_num-x], True, has_BN, relu_opt)
                 for x in range(self.res_num-1)]
-            + [unet_m2_BasicBlock(filters[0], filters[0], False, has_BN, has_relu)]
+            + [unet_m2_BasicBlock(filters[0], filters[0], False, has_BN, relu_opt)]
             + [nn.Conv3d(filters[0], out_num, kernel_size=(1,5,5), stride=1, padding=(0,2,2), bias=True)]) 
 
     def forward(self, x):
