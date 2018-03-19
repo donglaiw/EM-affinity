@@ -1,5 +1,5 @@
 import argparse
-
+from em_data.options import *
 
 def optResource(parser):
     parser.add_argument('-g','--num-gpu', type=int,  default=1,
@@ -30,7 +30,6 @@ def optTrain(parser):
                         help='pre-train number of epoch')
     parser.add_argument('-es','--snapshot',  default='',
                         help='pre-train snapshot path')
-
 
 
 def optModel(parser):

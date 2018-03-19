@@ -9,8 +9,8 @@ def getExt_model():
 
 
 def getExt_data():
-    return [Extension('em.data.augmentation.warping',
-                 sources=['em/data/augmentation/warping.pyx'],
+    return [Extension('em_pth.data.augmentation.warping',
+                 sources=['em_pth/data/augmentation/warping.pyx'],
                  extra_compile_args=['-std=c99', '-fno-strict-aliasing', '-O3', '-Wall', '-Wextra'])]
 
 def setup_cython():

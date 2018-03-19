@@ -35,6 +35,8 @@ def get_args():
     optResource(parser)
 
     args = parser.parse_args()
+
+    args.mode = 'train'
     return args
 
 def init(args):
